@@ -19,7 +19,7 @@
     <p class="sub" id="subtitle">Sign in to your feed and playlists.</p>
 
     <div class="alert warn show" id="config-warning" hidden>
-      Firebase isn't connected yet. Paste your config into <code>core/firebase-config.js</code>.
+      Supabase isn't connected yet. Paste your project URL and public key into <code>core/supabase-config.js</code>.
     </div>
     <div class="alert" id="alert" role="alert"></div>
 
@@ -89,6 +89,18 @@
       </label>
       <button class="btn primary" type="submit">Send reset link</button>
       <button class="btn ghost" type="button" data-go="signin">Back to sign in</button>
+    </form>
+
+    <!-- SET NEW PASSWORD (after clicking the reset link in the email) -->
+    <form id="form-newpassword" novalidate hidden>
+      <label>New password
+        <span class="field">
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+          <button type="button" class="toggle-pw">Show</button>
+        </span>
+        <span class="hint">At least 8 characters.</span>
+      </label>
+      <button class="btn primary" type="submit">Save new password</button>
     </form>
 
     <!-- PICK USERNAME (first Google sign-in, or any account without a profile) -->

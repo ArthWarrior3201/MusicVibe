@@ -7,20 +7,20 @@ Part of three repos:
 
 * **MusicVibe** (this repo): listeners: accounts, feed, playlists. Also hosts the shared login code in `core/`.
 * **ProArtists**: artist profiles, song uploads, collaborators.
-* **MV-Backend**: Firebase security rules + setup docs.
+* **MV-Backend**: Supabase database + permission rules, setup docs, and (soon) the Cloudflare upload Worker.
 
 ## Pages
 
 | File | What |
 |---|---|
 | `index.html` | Landing page (skips to the app if you're signed in) |
-| `auth.html` | Sign in · Sign up · Forgot password · Pick username. Choose a mode with `?mode=signin\|signup\|reset\|username`, and set where to go afterwards with `&next=/path` |
+| `auth.html` | Sign in · Sign up · Forgot password · Set new password · Pick username. Choose a mode with `?mode=signin\|signup\|reset\|newpassword\|username`, and set where to go afterwards with `&next=/path` |
 | `app.html` | Signed-in home (feed placeholder) |
 
 ## Shared core (`core/`)
 
-* `firebase-config.js`: **paste your Firebase web config here** (it's safe to make public)
-* `mv.js`: Firebase setup + `signUpWithEmail`, `signInWithEmail`, `signInWithGoogle`, `resetPassword`,
+* `supabase-config.js`: **paste your Supabase Project URL + anon/publishable key here** (safe to make public; never the service_role key)
+* `mv.js`: Supabase client + `signUpWithEmail`, `signInWithEmail`, `signInWithGoogle`, `resetPassword`, `updatePassword`,
   `requireUser()` (page guard), username helpers, friendly error messages.
 
 ProArtists imports `/MusicVibe/core/mv.js` directly, so don't rename this folder.
@@ -41,4 +41,4 @@ mkdir -p ~/mv-site && ln -s "$PWD" ~/mv-site/MusicVibe && ln -s "$PWD/../ProArti
 cd ~/mv-site && python3 -m http.server 8000
 ```
 
-Then open http://localhost:8000/MusicVibe/ (`localhost` is already an authorized domain in Firebase).
+Then open http://localhost:8000/MusicVibe/ (add `http://localhost:8000/MusicVibe/auth.html**` to Supabase → Authentication → URL Configuration → Redirect URLs).

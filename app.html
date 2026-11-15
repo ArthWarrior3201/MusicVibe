@@ -20,11 +20,6 @@
 </header>
 
 <main class="container" id="main" hidden>
-  <div class="alert warn show" id="verify" hidden style="margin-bottom:16px">
-    Please verify your email. We sent a link to <strong id="verify-email"></strong>.
-    <button class="link-btn" id="resend">Resend</button>
-  </div>
-
   <section class="panel">
     <h2>Hey, <span id="name"></span> 👋</h2>
     <p class="muted" style="margin:0">@<span id="username"></span></p>
@@ -43,31 +38,22 @@
 </main>
 
 <script type="module">
-  import { requireUser, signOut, resendVerification, friendlyError } from "./core/mv.js";
+  import { requireUser, signOut } from "./core/mv.js";
 
-  const { user, profile } = await requireUser();
+  const { profile } = await requireUser();
   const $ = (s) => document.querySelector(s);
 
-  $("#name").textContent = profile.displayName;
+  $("#name").textContent = profile.display_name;
   $("#username").textContent = profile.username;
   const av = $("#avatar");
-  if (profile.photoURL) {
+  if (profile.avatar_url) {
     const img = new Image();
-    img.src = profile.photoURL;
+    img.src = profile.avatar_url;
     img.alt = "";
     img.referrerPolicy = "no-referrer";
     av.append(img);
   } else {
-    av.textContent = profile.displayName[0].toUpperCase();
-  }
-
-  if (!user.emailVerified && user.providerData.some((p) => p.providerId === "password")) {
-    $("#verify").hidden = false;
-    $("#verify-email").textContent = user.email;
-    $("#resend").onclick = async (e) => {
-      try { await resendVerification(); e.target.textContent = "Sent ✓"; e.target.disabled = true; }
-      catch (err) { alert(friendlyError(err)); }
-    };
+    av.textContent = profile.display_name[0].toUpperCase();
   }
 
   $("#signout").onclick = async () => { await signOut(); location.replace("./"); };
