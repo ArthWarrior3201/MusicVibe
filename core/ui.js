@@ -143,7 +143,7 @@ export function followButton(artistId, { onChange } = {}) {
 let player;
 function ensurePlayer() {
   if (player) return player;
-  const audio = el("audio", { controls: true, preload: "auto" });
+  const audio = el("audio", { controls: true, preload: "auto", crossOrigin: "anonymous" }); // CORS mode: see api/media
   const cover = el("img", { className: "mp-cover", alt: "" });
   const title = el("a", { className: "mp-title" });
   const artist = el("a", { className: "mp-artist" });
@@ -175,6 +175,7 @@ function ensurePlayer() {
   prev.onclick = () => load(player.index - 1);
   next.onclick = () => load(player.index + 1);
   audio.onended = () => { if (player.index < player.queue.length - 1) load(player.index + 1); };
+  audio.onerror = () => { artist.textContent = "Couldn't load this song. Try again in a moment."; };
   close.onclick = () => { audio.pause(); bar.hidden = true; };
   return player;
 }
