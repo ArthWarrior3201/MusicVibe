@@ -4,7 +4,7 @@
 // in MV-Backend protect the data.
 // NEVER put the "service_role" / "secret" key here.
 export const SUPABASE_URL = "https://asuvocgnexepodycgkyp.supabase.co";
-export const SUPABASE_ANON_KEY = "sb_publishable_8bfS-arj_U_CtTt_wMjqmw_ZhI4cTo";
+export const SUPABASE_ANON_KEY = "sb_publishable_8bfS-arj_U_CtTt_wMjqmw_ZhI4cToj";
 
 // Your Vercel deployment of MV-Storage (no trailing slash), e.g. https://mv-storage.vercel.app
 export const API_BASE = "https://mv-storage.vercel.app";
