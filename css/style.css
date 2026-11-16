@@ -155,3 +155,5 @@ select { padding: 10px 12px; border-radius: 11px; border: 1px solid var(--line);
   .two-col { grid-template-columns: 1fr; }
   .artist-hero { flex-direction: column; text-align: center; }
 }
+
+.code-input { font-size: 26px !important; letter-spacing: 10px; text-align: center; font-variant-numeric: tabular-nums; }

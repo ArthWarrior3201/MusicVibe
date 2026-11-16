@@ -7,10 +7,6 @@ export { SITES, API_BASE };
 export const isConfigured = !SUPABASE_URL.includes("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
 export const isApiConfigured = !API_BASE.includes("YOUR_");
 
-// Read before Supabase strips the tokens from the URL: did we just come back from Google?
-// (Email links carry type=signup/recovery/...; a Google return has a token but no type.)
-const hashParams = new URLSearchParams(location.hash.slice(1));
-const cameBackFromOAuth = hashParams.has("access_token") && !hashParams.has("type");
 
 // ---------- "Keep me signed in" ----------
 // Remembered sessions go in localStorage (survive closing the browser),
@@ -97,7 +93,7 @@ export async function getProfile(uid) {
   return data;
 }
 
-// For accounts that don't have a profile yet (first Google sign-in).
+// For accounts that somehow have no profile yet (fallback; sign-up normally creates it).
 export async function createProfile(user, { username, displayName }) {
   const { error } = await supabase.from("profiles").insert({
     id: user.id,
@@ -138,19 +134,24 @@ export async function signInWithEmail({ email, password, remember = true }) {
   return data.user;
 }
 
-// Google always leaves the page and comes back to auth.html, which finishes the sign-in.
-export async function signInWithGoogle({ remember = true, next } = {}) {
-  setRemember(remember);
-  const { error } = await auth.signInWithOAuth({
-    provider: "google",
-    options: { redirectTo: authPageUrl("signin", next), queryParams: { prompt: "select_account" } },
-  });
-  if (error) throw error;
-}
-
 export async function resetPassword(email, next) {
   const { error } = await auth.resetPasswordForEmail(email, { redirectTo: authPageUrl("newpassword", next) });
   if (error) throw error;
+}
+
+// Email verification codes (sent by our Apps Script mailer).
+// Sign-up: confirms the email and signs the user in.
+export async function verifySignupCode(email, code) {
+  const { data, error } = await auth.verifyOtp({ email, token: code, type: "signup" });
+  if (error) throw error;
+  return data.user;
+}
+
+// Password reset: signs the user in so they can set a new password.
+export async function verifyResetCode(email, code) {
+  const { data, error } = await auth.verifyOtp({ email, token: code, type: "recovery" });
+  if (error) throw error;
+  return data.user;
 }
 
 export async function updatePassword(password) {
@@ -203,7 +204,6 @@ export function notifySignIn({ app = "listener", method = "password" } = {}) {
   if (!isApiConfigured) return;
   api("/api/notify-signin", { method: "POST", json: { app, method }, keepalive: true }).catch(() => {});
 }
-export const justSignedInWithGoogle = () => cameBackFromOAuth;
 
 // Upload a file (audio, or a jpg/png/webp picture) in 4 MB parts. onProgress(0..1). Returns { id, url }.
 export async function uploadFile(file, { onProgress = () => {} } = {}) {
@@ -383,7 +383,7 @@ const MESSAGES = {
   email_provider_disabled: "Email sign-up isn't turned on in Supabase yet.",
   signup_disabled: "New sign-ups are turned off right now.",
   session_not_found: "Your session expired. Please sign in again.",
-  otp_expired: "That link has expired. Request a new one.",
+  otp_expired: "That code is wrong or has expired. Check it, or get a new one.",
 };
 
 export function friendlyError(e) {

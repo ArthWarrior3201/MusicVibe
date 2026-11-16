@@ -1,8 +1,8 @@
 import {
-  auth, isConfigured, currentUser, onAuthChange,
-  signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, updatePassword,
+  isConfigured, currentUser, onAuthChange,
+  signInWithEmail, signUpWithEmail, resetPassword, updatePassword, verifySignupCode, verifyResetCode,
   resendConfirmation, createProfile, getProfile, isUsernameTaken, normalizeUsername,
-  usernameProblem, friendlyError, safeNext, signOut, appFor, notifySignIn, justSignedInWithGoogle,
+  usernameProblem, friendlyError, safeNext, signOut, appFor, notifySignIn,
 } from "../core/mv.js";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -14,13 +14,15 @@ const forms = {
   signin: $("#form-signin"),
   signup: $("#form-signup"),
   reset: $("#form-reset"),
+  code: $("#form-code"),
   newpassword: $("#form-newpassword"),
   username: $("#form-username"),
 };
 const COPY = {
   signin:      ["Welcome back", "Sign in to your feed and playlists."],
   signup:      ["Join MusicVibe", "Make playlists, follow artists, build your feed."],
-  reset:       ["Reset password", "We'll email you a link to set a new one."],
+  reset:       ["Reset password", "We'll email you a code to set a new one."],
+  code:        ["Check your email", "Enter the code to continue."],
   newpassword: ["Set a new password", "Choose a new password for your account."],
   username:    ["Pick your username", "This is how people find you on MusicVibe."],
 };
@@ -35,6 +37,17 @@ if (app === "artist") {
 }
 
 let mode = "signin";
+let codeEmail = "";
+let codePurpose = "signup"; // "signup" | "recovery"
+
+function goCode(email, purpose, message) {
+  codeEmail = email;
+  codePurpose = purpose;
+  setMode("code");
+  $("#code-email").textContent = email;
+  forms.code.reset();
+  if (message) showAlert(message, "info");
+}
 let busy = false; // stops the auth listener from redirecting mid-action
 
 // ---------- mode switching ----------
@@ -46,7 +59,6 @@ function setMode(m, { keepAlert = false } = {}) {
   $("#subtitle").textContent = COPY[m][1];
   const entry = m === "signin" || m === "signup";
   $("#tabs").hidden = !entry;
-  $("#google-block").hidden = !entry;
   $("#foot").hidden = !entry;
   for (const b of $("#tabs").children) b.setAttribute("aria-selected", String(b.dataset.mode === m));
   if (!keepAlert) showAlert();
@@ -172,7 +184,7 @@ forms.signin.addEventListener("submit", (e) => {
     } catch (err) {
       if (err.code !== "email_not_confirmed") throw err;
       await resendConfirmation(email, next).catch(() => {});
-      showAlert(`Confirm your email first. We just sent a new link to ${email}.`, "info");
+      goCode(email, "signup", "Your email isn't verified yet. We just sent you a new code.");
     }
   });
 });
@@ -194,9 +206,7 @@ forms.signup.addEventListener("submit", (e) => {
     });
     if (!needsConfirmation) { location.replace(next); return; }
     e.target.reset();
-    setMode("signin");
-    forms.signin.elements.email.value = email;
-    showAlert(`Almost done! We sent a confirmation link to ${email}. Click it, then sign in.`, "info");
+    goCode(email, "signup");
   });
 });
 
@@ -206,9 +216,45 @@ forms.reset.addEventListener("submit", (e) => {
   if (!isEmail(email)) return showAlert("Enter a valid email.");
   withBusy(e.target, async () => {
     await resetPassword(email, next);
-    // Same message either way, so nobody can test which emails have accounts.
-    showAlert(`If an account exists for ${email}, a reset link is on its way. Check your inbox.`, "info");
+    // Same screen either way, so nobody can test which emails have accounts.
+    goCode(email, "recovery", "If an account exists for this email, a code is on its way.");
   });
+});
+
+forms.code.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const code = e.target.elements.code.value.replace(/\D/g, "");
+  if (code.length < 6) return showAlert("Enter the code from the email.");
+  withBusy(e.target, async () => {
+    if (codePurpose === "signup") {
+      const user = await verifySignupCode(codeEmail, code);
+      await routeSignedIn(user);
+    } else {
+      await verifyResetCode(codeEmail, code);
+      setMode("newpassword");
+    }
+  });
+});
+
+forms.code.elements.code.addEventListener("input", (e) => {
+  const v = e.target.value.replace(/\D/g, "");
+  if (v !== e.target.value) e.target.value = v;
+});
+
+$("#code-resend").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    if (codePurpose === "signup") await resendConfirmation(codeEmail, next);
+    else await resetPassword(codeEmail, next);
+    showAlert("New code sent. Check your inbox (and spam).", "info");
+  } catch (err) { showAlert(friendlyError(err)); }
+  setTimeout(() => { btn.disabled = false; }, 30000); // don't burn the email quota
+});
+
+$("#code-back").addEventListener("click", () => {
+  setMode(codePurpose === "signup" ? "signup" : "reset");
+  if (forms[mode].elements.email) forms[mode].elements.email.value = codeEmail;
 });
 
 forms.newpassword.addEventListener("submit", (e) => {
@@ -245,20 +291,6 @@ $("#cancel-setup").addEventListener("click", async () => {
   setMode("signin");
 });
 
-$("#google-btn").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  const remember = forms[mode].elements.remember?.checked ?? true;
-  btn.disabled = true;
-  showAlert();
-  try {
-    await signInWithGoogle({ remember, next }); // leaves the page
-  } catch (err) {
-    console.error(err);
-    showAlert(friendlyError(err));
-    btn.disabled = false;
-  }
-});
-
 // ---------- routing ----------
 // Signed in + has profile -> go to `next`. Signed in, no profile -> pick username.
 async function routeSignedIn(user) {
@@ -269,7 +301,7 @@ async function routeSignedIn(user) {
   const meta = user.user_metadata || {};
   if (!f.displayName.value) f.displayName.value = (meta.full_name || meta.name || "").slice(0, 50);
   if (!f.username.value) {
-    // suggest one from the Google name / email
+    // suggest one from their name / email
     const base = normalizeUsername((meta.full_name || meta.name || user.email || "").split("@")[0]).replace(/[^a-z0-9_.]/g, "");
     if (base) {
       f.username.value = (/^[a-z]/.test(base) ? base : "u" + base).slice(0, 20);
@@ -290,11 +322,11 @@ function urlError() {
 // ---------- boot ----------
 if (!isConfigured) {
   $("#config-warning").hidden = false;
-  for (const b of document.querySelectorAll("button")) if (b.type === "submit" || b.id === "google-btn") b.disabled = true;
+  for (const b of document.querySelectorAll("button[type=submit]")) b.disabled = true;
 }
 
 const linkError = urlError();
-const requested = params.get("mode") || "signin";
+const requested = ["code"].includes(params.get("mode")) ? "signin" : (params.get("mode") || "signin");
 
 if (isConfigured) {
   // Waits for supabase-js to finish reading any sign-in / reset tokens from the URL.
@@ -307,7 +339,6 @@ if (isConfigured) {
     if (user) setMode("newpassword");
     else { setMode("reset"); showAlert("That reset link has expired. Request a new one."); }
   } else if (user) {
-    if (justSignedInWithGoogle()) notifySignIn({ app, method: "google" });
     setMode(requested === "username" ? "username" : requested);
     routeSignedIn(user).catch((e) => showAlert(friendlyError(e)));
   } else {

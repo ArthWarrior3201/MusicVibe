@@ -15,7 +15,7 @@ Part of three repos:
 | File | What |
 |---|---|
 | `index.html` | Landing page (skips to the app if you're signed in) |
-| `auth.html` | Sign in · Sign up · Forgot password · Set new password · Pick username. Choose a mode with `?mode=signin\|signup\|reset\|newpassword\|username`, and set where to go afterwards with `&next=/path` |
+| `auth.html` | Sign in · Sign up · Enter code (email verification / reset) · Forgot password · Set new password · Pick username. Set where to go afterwards with `&next=/path` |
 | `app.html` | Signed-in home (feed placeholder) |
 | `song.html?id=` | Song page: player, artists, credits grouped by role, and the **About the artist** tile for the main artist |
 | `artist.html?id=` | Artist page: round photo, name, description, songs, "Appears on" |
