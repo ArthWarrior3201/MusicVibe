@@ -1,62 +1,72 @@
 // Auto-updater for MusicVibe + ProArtists (loaded on every page through core/mv.js).
 //
-// GitHub Pages stamps every file of a site with the time of its last deploy
-// (Last-Modified) and tells browsers to cache files for 10 minutes. So every 60s
-// (and when you come back to the tab) we ask for that stamp with a tiny HEAD request.
-// If a site this page uses was redeployed, we re-download the files this page uses
-// straight from the server (like Ctrl+Shift+R) and reload. If you're busy (music
-// playing, an upload running, typing) we wait, and offer a "Refresh now" button.
+// GitHub Pages stamps every file of a site with its deploy time (Last-Modified)
+// and lets browsers cache files for 10 minutes. Every 60s (and when you come back
+// to the tab) we compare, for each site this page uses:
+//   - the version THIS PAGE actually loaded  (the copy in the browser's cache), and
+//   - the version that's live now             (a tiny HEAD request that skips caches).
+// Same → you're up to date (first visit, Ctrl+F5 / Ctrl+Shift+R, or already updated):
+// nothing happens. Different → we re-download the page's files fresh and reload.
+// If you're busy (music playing, uploading, typing) we wait and show a small
+// "A new version of MusicVibe/ProArtists is ready" popup instead.
 
 const INTERVAL = 60_000;
 const SITES = ["MusicVibe", "ProArtists"];
-const KEY = (site) => `mv-deploy:${site}`;
-const store = {
-  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+const here = location.pathname.split("/")[1];
+const appName = here === "ProArtists" ? "ProArtists" : "MusicVibe";
+const session = {
+  get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} },
 };
 
-// Which of our sites does this page load files from? (ProArtists also uses MusicVibe's core.)
-function sitesInUse() {
-  const urls = [location.href, ...performance.getEntriesByType("resource").map((e) => e.name)];
-  const used = new Set();
-  for (const u of urls) {
-    try {
-      const url = new URL(u);
-      if (url.origin !== location.origin) continue;
-      const first = url.pathname.split("/")[1];
-      if (SITES.includes(first)) used.add(first);
-    } catch {}
-  }
-  return [...used];
+const siteOf = (u) => { try { const x = new URL(u, location.href); return x.origin === location.origin ? x.pathname.split("/")[1] : null; } catch { return null; } };
+const isCheck = (u) => u.includes("update-check=");
+
+// Our files this page loaded (page itself + scripts, styles, images from our sites).
+function loadedFiles() {
+  const urls = [location.href.split("#")[0], ...performance.getEntriesByType("resource").map((e) => e.name)];
+  return [...new Set(urls)].filter((u) => SITES.includes(siteOf(u)) && !isCheck(u) && !u.includes("/api/"));
 }
 
-async function deployStamp(site) {
-  const res = await fetch(`/${site}/index.html?update-check=${Date.now()}`, { method: "HEAD", cache: "no-store" });
-  if (!res.ok) return null;
-  return res.headers.get("last-modified") || res.headers.get("etag");
+// One file per site to compare (scripts first: every page loads them).
+function probes() {
+  const files = loadedFiles();
+  const pick = {};
+  for (const s of SITES) {
+    const mine = files.filter((u) => siteOf(u) === s);
+    pick[s] = mine.find((u) => /\.js(\?|$)/.test(u)) || mine[0];
+  }
+  return Object.fromEntries(Object.entries(pick).filter(([, u]) => u));
+}
+
+const stamp = (res) => res.headers.get("last-modified") || res.headers.get("etag");
+
+async function liveVersion(url) {
+  const u = new URL(url);
+  u.searchParams.set("update-check", Date.now());
+  const res = await fetch(u, { method: "HEAD", cache: "no-store" });
+  return res.ok ? stamp(res) : null;
+}
+
+// The copy the browser has (= what this page is running). If it's not cached,
+// this hits the network and returns the latest, which correctly reads as "up to date".
+async function loadedVersion(url) {
+  const res = await fetch(url, { cache: "force-cache" });
+  return res.ok ? stamp(res) : null;
 }
 
 function busy() {
-  if ((window.__mvBusy || 0) > 0) return "upload";
-  if ([...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)) return "playing";
+  if ((window.__mvBusy || 0) > 0) return true;
+  if ([...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)) return true;
   const a = document.activeElement;
-  if (a && (a.matches?.("input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]), textarea, [contenteditable]")) && a.value) return "typing";
-  return null;
+  return !!(a?.matches?.("input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]), textarea, [contenteditable]") && a.value);
 }
 
-// Re-download everything this page uses from our sites, skipping the browser cache.
 async function refreshCache() {
-  const urls = new Set([location.href.split("#")[0]]);
-  for (const e of performance.getEntriesByType("resource")) {
-    try {
-      const url = new URL(e.name);
-      if (url.origin === location.origin && SITES.includes(url.pathname.split("/")[1]) && !url.searchParams.has("update-check")) urls.add(url.href);
-    } catch {}
-  }
-  await Promise.all([...urls].map((u) => fetch(u, { cache: "reload", credentials: "same-origin" }).catch(() => {})));
+  await Promise.all(loadedFiles().map((u) => fetch(u, { cache: "reload" }).catch(() => {})));
 }
 
-let pending = null; // { site: stamp } waiting to be applied
+let pending = null; // live stamps we still need to apply
 let toast = null;
 
 function showToast() {
@@ -65,7 +75,7 @@ function showToast() {
   toast.className = "update-toast";
   toast.setAttribute("role", "status");
   const text = document.createElement("span");
-  text.textContent = "A new version of MusicVibe is ready.";
+  text.textContent = `A new version of ${appName} is ready.`;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.textContent = "Refresh now";
@@ -74,10 +84,15 @@ function showToast() {
   document.body.append(toast);
 }
 
+function hideToast() { toast?.remove(); toast = null; }
+
 async function apply(force = false) {
   if (!pending) return;
   if (!force && busy()) { showToast(); return; }
-  for (const [site, stamp] of Object.entries(pending)) store.set(KEY(site), stamp);
+  const key = `mv-updated:${Object.values(pending).join("|")}`;
+  // Reload once per new version; if the CDN is still serving the old files, don't loop.
+  if (!force && session.get(key)) { pending = null; hideToast(); return; }
+  session.set(key, "1");
   pending = null;
   await refreshCache();
   location.reload();
@@ -86,24 +101,21 @@ async function apply(force = false) {
 export async function checkForUpdate() {
   if (document.hidden) return;
   try {
-    const sites = sitesInUse();
-    const fresh = {};
-    await Promise.all(sites.map(async (s) => { fresh[s] = await deployStamp(s); }));
-    const changed = {};
-    for (const s of sites) {
-      if (!fresh[s]) continue;
-      const known = store.get(KEY(s));
-      if (!known) store.set(KEY(s), fresh[s]); // first visit: remember this version
-      else if (known !== fresh[s]) changed[s] = fresh[s];
-    }
-    if (Object.keys(changed).length) {
-      pending = { ...(pending || {}), ...changed };
+    const behind = {};
+    await Promise.all(Object.entries(probes()).map(async ([site, url]) => {
+      const [live, loaded] = await Promise.all([liveVersion(url), loadedVersion(url)]);
+      if (live && loaded && live !== loaded) behind[site] = live;
+    }));
+    if (Object.keys(behind).length) {
+      pending = behind;
       await apply();
+    } else {
+      pending = null; // already up to date (e.g. you pressed Ctrl+F5): no popup
+      hideToast();
     }
   } catch { /* offline etc.: try again next time */ }
 }
 
-// While an update is waiting for you to finish, keep checking if you're free yet.
 setInterval(() => { if (pending && !busy()) apply(); }, 5_000);
 setInterval(checkForUpdate, INTERVAL);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkForUpdate(); });

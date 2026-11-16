@@ -26,22 +26,53 @@ export function avatar(artist, { size = 48, shape = "circle", cls = "" } = {}) {
 // The "About the artist" tile: a wide crop of the artist's photo (cropped to fit with
 // object-fit: cover, never stretched), the name under it, and the start of their
 // description. With no description the name is shown bigger instead.
-export function artistTile(artist, { label = "About the artist" } = {}) {
+// The whole card opens the artist page; the Follow button on it just follows.
+export function artistTile(artist, { label = "About the artist", showFollow = true } = {}) {
   const bio = (artist.bio || "").trim();
-  const tile = el("a", { className: "artist-tile" + (bio ? "" : " no-bio"), href: artistUrl(artist.id) });
-  tile.setAttribute("aria-label", `${artist.name}: open artist page`);
+  const tile = el("div", { className: "artist-tile" + (bio ? "" : " no-bio") });
   const media = el("div", { className: "artist-tile-media" });
   const src = mediaUrl(artist.avatar_media_id);
   if (src) media.append(el("img", { src, alt: "", loading: "lazy", decoding: "async" }));
   else media.append(el("span", { className: "initial", textContent: artist.name.trim()[0]?.toUpperCase() || "?" }));
   media.append(el("span", { className: "artist-tile-label", textContent: label }));
+  // stretched link: covers the whole card, sits under the Follow button
+  const link = el("a", { className: "artist-tile-link", href: artistUrl(artist.id) },
+    el("h3", { className: "artist-tile-name", textContent: artist.name }));
+  link.setAttribute("aria-label", `${artist.name}: open artist page`);
   const body = el("div", { className: "artist-tile-body" },
-    el("h3", { className: "artist-tile-name", textContent: artist.name }),
+    link,
     bio ? el("p", { className: "artist-tile-bio", textContent: bio }) : null,
-    el("span", { className: "artist-tile-cta", textContent: "View artist →" }),
+    el("div", { className: "artist-tile-foot" },
+      el("span", { className: "artist-tile-cta", textContent: "View artist →" }),
+      showFollow ? followButton(artist.id) : null),
   );
   tile.append(media, body);
   return tile;
+}
+
+// ---------- Share ----------
+// Opens the device share sheet when there is one; otherwise copies the link.
+export function shareButton({ title, text, url = location.href.split("#")[0] }) {
+  const btn = el("button", { className: "btn ghost small share-btn", type: "button", textContent: "Share" });
+  btn.onclick = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title, text, url }); return; }
+      catch (e) { if (e.name === "AbortError") return; } // cancelled: fine; other errors: copy instead
+    }
+    let ok = false;
+    try { await navigator.clipboard.writeText(url); ok = true; }
+    catch {
+      const ta = el("textarea", { value: url });
+      ta.style.cssText = "position:fixed;opacity:0";
+      document.body.append(ta); ta.select();
+      try { ok = document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    btn.textContent = ok ? "Link copied!" : "Couldn't copy";
+    btn.classList.toggle("on", ok);
+    setTimeout(() => { btn.textContent = "Share"; btn.classList.remove("on"); }, 2000);
+  };
+  return btn;
 }
 
 // Credits grouped the way music apps show them.

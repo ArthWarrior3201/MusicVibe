@@ -7,6 +7,8 @@
   <link rel="apple-touch-icon" href="img/logo-192.png">
   <link rel="stylesheet" href="css/style.css">
   <title>Song · MusicVibe</title>
+  <!-- auto-refresh when a new version is deployed (runs even if the rest fails to load) -->
+  <script type="module" src="core/updater.js"></script>
 </head>
 <body>
 <header class="topbar">
@@ -52,9 +54,9 @@
 
 <script type="module">
   import { requireUser, getSong, mediaUrl, listMyPlaylists, createPlaylist, addToPlaylist, friendlyError } from "./core/mv.js";
-  import { artistTile, creditsList, artistLine, el, followButton, playlistUrl } from "./core/ui.js";
+  import { artistTile, creditsList, artistLine, el, playlistUrl, shareButton } from "./core/ui.js";
 
-  await requireUser();
+  const { user } = await requireUser();
   const $ = (s) => document.querySelector(s);
   const id = new URLSearchParams(location.search).get("id");
   const data = id ? await getSong(id).catch(() => null) : null; // bad/unknown id -> "not found"
@@ -70,10 +72,8 @@
     $("#cover").append(cover ? el("img", { src: cover, alt: "" }) : el("img", { src: "img/logo-512.png", alt: "" }));
     $("#player").src = mediaUrl(song.audio_media_id);
     // The main artist (who uploaded it on ProArtists) gets the big tile.
-    if (artist) {
-      $("#about").append(artistTile(artist));
-      $("#about").append(el("div", { style: "margin-top:10px" }, followButton(artist.id)));
-    }
+    if (artist) $("#about").append(artistTile(artist, { showFollow: artist.id !== user.id }));
+    $("#add-pl").append(shareButton({ title: song.title, text: `${song.title} by ${artist?.name || "an artist"} on MusicVibe` }));
 
     // ---------- add to playlist ----------
     const sel = $("#pl-select");

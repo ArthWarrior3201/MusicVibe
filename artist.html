@@ -7,6 +7,8 @@
   <link rel="apple-touch-icon" href="img/logo-192.png">
   <link rel="stylesheet" href="css/style.css">
   <title>Artist · MusicVibe</title>
+  <!-- auto-refresh when a new version is deployed (runs even if the rest fails to load) -->
+  <script type="module" src="core/updater.js"></script>
 </head>
 <body>
 <header class="topbar">
@@ -27,7 +29,7 @@
         <div class="eyebrow">Artist</div>
         <h1 id="name"></h1>
         <p class="muted" id="followers" style="margin:0 0 10px"></p>
-        <div id="follow"></div>
+        <div id="follow" class="page-actions"></div>
       </div>
     </div>
   </section>
@@ -54,7 +56,7 @@
 
 <script type="module">
   import { requireUser, getArtist, listArtistSongs, listFeaturedOn, followerCount } from "./core/mv.js";
-  import { avatar, el, songList, followButton } from "./core/ui.js";
+  import { avatar, el, songList, followButton, shareButton } from "./core/ui.js";
 
   const { user } = await requireUser();
   const $ = (s) => document.querySelector(s);
@@ -72,6 +74,7 @@
     const showCount = () => { $("#followers").textContent = `${count} follower${count === 1 ? "" : "s"}`; };
     showCount();
     if (artist.id !== user.id) $("#follow").append(followButton(artist.id, { onChange: (on) => { count += on ? 1 : -1; showCount(); } }));
+    $("#follow").append(shareButton({ title: artist.name, text: `${artist.name} on MusicVibe` }));
     const [songsRaw, featuredRaw] = await Promise.all([listArtistSongs(artist.id), listFeaturedOn(artist.id)]);
     const songs = songsRaw.map((s) => ({ ...s, artist }));
     $("#songs").append(...(songs.length ? songList(songs) : [el("li", { className: "muted", textContent: "No songs yet." })]));
