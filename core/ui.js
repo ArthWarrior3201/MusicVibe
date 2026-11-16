@@ -75,23 +75,30 @@ export function shareButton({ title, text, url = location.href.split("#")[0] }) 
   return btn;
 }
 
-// Credits grouped the way music apps show them.
-const GROUPS = [
-  ["Performed by", ["main", "featured", "performer"]],
-  ["Written by", ["composer", "lyricist"]],
-  ["Produced by", ["producer"]],
-  ["Mixing & mastering", ["mixing", "mastering"]],
+// Credits: one heading per role, exactly as chosen on ProArtists, in this order.
+// A heading only appears when at least one person on the song has that role.
+// Someone with several roles is listed under each of them.
+const CREDIT_HEADINGS = [
+  ["main", "Main Artist", "Main Artists"],
+  ["featured", "Featured Artist", "Featured Artists"],
+  ["performer", "Performer", "Performers"],
+  ["producer", "Producer", "Producers"],
+  ["composer", "Composer", "Composers"],
+  ["lyricist", "Lyricist", "Lyricists"],
+  ["mixing", "Mixing Engineer", "Mixing Engineers"],
+  ["mastering", "Mastering Engineer", "Mastering Engineers"],
 ];
 
 export function creditsList(credits) {
   const wrap = el("div", { className: "credits" });
-  for (const [title, roles] of GROUPS) {
-    const people = credits.filter((c) => c.roles.some((r) => roles.includes(r)));
+  for (const [role, one, many] of CREDIT_HEADINGS) {
+    const people = credits.filter((c) => c.roles.includes(role));
     if (!people.length) continue;
-    wrap.append(el("h4", { textContent: title }), el("ul", {}, people.map((c) => el("li", {},
-      c.artist_id ? el("a", { href: artistUrl(c.artist_id), textContent: c.name }) : el("span", { textContent: c.name }),
-      el("span", { className: "muted", textContent: c.roles.filter((r) => roles.includes(r)).map((r) => ROLES[r]).join(", ") }),
-    ))));
+    wrap.append(
+      el("h4", { textContent: people.length === 1 ? one : many }),
+      el("ul", {}, people.map((c) => el("li", {},
+        c.artist_id ? el("a", { href: artistUrl(c.artist_id), textContent: c.name }) : el("span", { textContent: c.name })))),
+    );
   }
   return wrap;
 }
