@@ -1,6 +1,7 @@
 // MusicVibe shared core: Supabase client + auth + profile helpers.
 // Used by MusicVibe and ProArtists (imported from /MusicVibe/core/mv.js).
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm";
+import "./updater.js"; // auto-refresh when a new version is deployed
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SITES, API_BASE } from "./supabase-config.js";
 
 export { SITES, API_BASE };
@@ -206,7 +207,13 @@ export function notifySignIn({ app = "listener", method = "password" } = {}) {
 }
 
 // Upload a file (audio, or a jpg/png/webp picture) in 4 MB parts. onProgress(0..1). Returns { id, url }.
-export async function uploadFile(file, { onProgress = () => {} } = {}) {
+export async function uploadFile(file, opts = {}) {
+  window.__mvBusy = (window.__mvBusy || 0) + 1; // the auto-updater won't reload mid-upload
+  try { return await uploadFileInner(file, opts); }
+  finally { window.__mvBusy -= 1; }
+}
+
+async function uploadFileInner(file, { onProgress = () => {} } = {}) {
   const { id, chunkSize, partCount } = await api("/api/upload/start", {
     method: "POST", json: { filename: file.name, size: file.size },
   });

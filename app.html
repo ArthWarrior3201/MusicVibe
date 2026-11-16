@@ -114,7 +114,7 @@
             el("span", { className: "art", textContent: "♫" }),
             el("strong", { textContent: p.name }),
             el("span", { className: "muted", textContent: p.is_public ? "Public" : "Private" })))
-        : [el("p", { className: "muted", style: "margin:0", textContent: "You haven't created any playlists yet. Create one above, then add songs to it from any song's page." })]));
+        : [el("p", { className: "muted", style: "margin:0;grid-column:1/-1", textContent: "You haven't created any playlists yet. Create one above, then add songs to it from any song's page." })]));
     } catch (e) { $("#playlists").replaceChildren(el("p", { className: "muted", textContent: friendlyError(e) })); }
   }
 

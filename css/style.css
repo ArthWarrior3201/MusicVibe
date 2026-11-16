@@ -222,3 +222,9 @@ body.has-player-space { padding-bottom: 96px; }
   .brand { font-size: 18px; gap: 8px; }
   .brand .logo { width: 30px; height: 30px; }
 }
+
+/* ---------- auto-updater toast ---------- */
+.update-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 110px; z-index: 30; display: flex; gap: 12px; align-items: center;
+  padding: 10px 12px 10px 16px; border-radius: 12px; background: var(--card); border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
+  box-shadow: 0 20px 50px -20px #000; font-size: 14px; max-width: calc(100vw - 32px); }
+.update-toast button { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: 0; border-radius: 9px; padding: 7px 12px; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
