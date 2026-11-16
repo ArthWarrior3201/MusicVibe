@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/favicon-64.png">
+  <link rel="apple-touch-icon" href="img/logo-192.png">
+  <link rel="stylesheet" href="css/style.css">
+  <title>Song · MusicVibe</title>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="app.html">
+    <img class="logo" src="img/logo-192.png" alt="" width="34" height="34">
+    MusicVibe
+  </a>
+  <div class="right">
+    <a class="btn ghost small" href="../ProArtists/">ProArtists</a>
+  </div>
+</header>
+
+<main class="container" id="main" hidden>
+  <section class="panel">
+    <div class="song-head">
+      <div class="cover" id="cover"></div>
+      <div>
+        <div class="eyebrow">Song</div>
+        <h1 id="title"></h1>
+        <div id="artists"></div>
+      </div>
+    </div>
+    <audio class="player" id="player" controls preload="metadata"></audio>
+  </section>
+
+  <div class="two-col">
+    <section id="about"></section>
+    <section class="panel">
+      <h2>Credits</h2>
+      <div id="credits"></div>
+    </section>
+  </div>
+</main>
+
+<main class="container" id="missing" hidden>
+  <section class="panel"><h2>Song not found</h2><p class="muted">It may have been deleted. <a href="app.html">Go home</a></p></section>
+</main>
+
+<script type="module">
+  import { requireUser, getSong, mediaUrl } from "./core/mv.js";
+  import { artistTile, creditsList, artistLine, el } from "./core/ui.js";
+
+  await requireUser();
+  const $ = (s) => document.querySelector(s);
+  const id = new URLSearchParams(location.search).get("id");
+  const data = id ? await getSong(id).catch(() => null) : null; // bad/unknown id -> "not found"
+
+  if (!data) {
+    $("#missing").hidden = false;
+  } else {
+    const { song, artist, credits, artists } = data;
+    document.title = `${song.title} · MusicVibe`;
+    $("#title").textContent = song.title;
+    $("#artists").append(artistLine(credits, artists, song.artist_id));
+    const cover = mediaUrl(song.cover_media_id) || mediaUrl(artist?.avatar_media_id);
+    $("#cover").append(cover ? el("img", { src: cover, alt: "" }) : el("img", { src: "img/logo-512.png", alt: "" }));
+    $("#player").src = mediaUrl(song.audio_media_id);
+    // The main artist (who uploaded it on ProArtists) gets the big tile.
+    if (artist) $("#about").append(artistTile(artist));
+    $("#credits").append(creditsList(credits));
+    $("#main").hidden = false;
+  }
+</script>
+</body>
+</html>

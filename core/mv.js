@@ -205,8 +205,8 @@ export function notifySignIn({ app = "listener", method = "password" } = {}) {
 }
 export const justSignedInWithGoogle = () => cameBackFromOAuth;
 
-// Upload an audio file in 4 MB parts. onProgress(0..1). Returns { id, url }.
-export async function uploadAudio(file, { onProgress = () => {} } = {}) {
+// Upload a file (audio, or a jpg/png/webp picture) in 4 MB parts. onProgress(0..1). Returns { id, url }.
+export async function uploadFile(file, { onProgress = () => {} } = {}) {
   const { id, chunkSize, partCount } = await api("/api/upload/start", {
     method: "POST", json: { filename: file.name, size: file.size },
   });
@@ -236,7 +236,8 @@ export async function uploadAudio(file, { onProgress = () => {} } = {}) {
   return { id, url: mediaUrl(id) };
 }
 
-export const mediaUrl = (id) => `${API_BASE}/api/media/${id}`;
+export const uploadAudio = uploadFile;
+export const mediaUrl = (id) => (id ? `${API_BASE}/api/media/${id}` : null);
 
 export function deleteMedia(id) {
   return api(`/api/media/${id}`, { method: "DELETE" });
@@ -250,6 +251,103 @@ export async function listMyMedia() {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
+}
+
+// ---------- artists ----------
+// artists: { id (= user id), name, bio, avatar_media_id }
+const must = ({ data, error }) => { if (error) throw error; return data; };
+
+export async function getArtist(id) {
+  return must(await supabase.from("artists").select("*").eq("id", id).maybeSingle());
+}
+
+export async function saveMyArtist({ name, bio = "", avatarMediaId = null }) {
+  const user = await currentUser();
+  const existing = await getArtist(user.id);
+  const row = { name: name.trim(), bio: bio.trim(), avatar_media_id: avatarMediaId };
+  if (existing) return must(await supabase.from("artists").update(row).eq("id", user.id).select().single());
+  return must(await supabase.from("artists").insert({ id: user.id, ...row }).select().single());
+}
+
+export async function searchArtists(query, limit = 8) {
+  const q = query.trim().replace(/[%_,()]/g, "");
+  if (!q) return [];
+  return must(await supabase.from("artists").select("id, name, avatar_media_id").ilike("name", `%${q}%`).limit(limit));
+}
+
+// ---------- songs ----------
+export const ROLES = {
+  main: "Main artist", featured: "Featured artist", performer: "Performer", producer: "Producer",
+  composer: "Composer", lyricist: "Lyricist", mixing: "Mixing engineer", mastering: "Mastering engineer",
+};
+
+// credits: [{ artistId?, name, roles: [...], canEdit?, canDelete? }]. The uploader is always
+// the main artist; pass their own credit first (or it's added for you).
+export async function createSong({ title, audioMediaId, coverMediaId = null, credits = [] }) {
+  const user = await currentUser();
+  const me = await getArtist(user.id);
+  if (!me) throw Object.assign(new Error("Create your artist profile first."), { code: "no-artist" });
+  const id = crypto.randomUUID();
+  must(await supabase.from("songs").insert({ id, artist_id: me.id, title: title.trim(), audio_media_id: audioMediaId, cover_media_id: coverMediaId }));
+  let list = credits.filter((c) => c.name?.trim() && c.roles?.length);
+  if (!list.some((c) => c.artistId === me.id)) list = [{ artistId: me.id, name: me.name, roles: ["main"] }, ...list];
+  const seen = new Set();
+  list = list.filter((c) => !c.artistId || (!seen.has(c.artistId) && seen.add(c.artistId)));
+  must(await supabase.from("song_credits").insert(list.map((c, i) => ({
+    song_id: id, position: i, artist_id: c.artistId || null, name: c.name.trim(), roles: c.roles,
+    can_edit: c.artistId === me.id ? false : !!c.canEdit, can_delete: c.artistId === me.id ? false : !!c.canDelete,
+  }))));
+  return id;
+}
+
+// { song, artist (main), credits: [...] , artists: { id: artist } }
+export async function getSong(id) {
+  const song = must(await supabase.from("songs").select("*").eq("id", id).maybeSingle());
+  if (!song) return null;
+  const credits = must(await supabase.from("song_credits").select("*").eq("song_id", id).order("position"));
+  const ids = [...new Set([song.artist_id, ...credits.map((c) => c.artist_id).filter(Boolean)])];
+  const list = must(await supabase.from("artists").select("*").in("id", ids));
+  const artists = Object.fromEntries(list.map((a) => [a.id, a]));
+  return { song, artist: artists[song.artist_id], credits, artists };
+}
+
+export async function listArtistSongs(artistId) {
+  return must(await supabase.from("songs").select("*").eq("artist_id", artistId).order("created_at", { ascending: false }));
+}
+
+// Songs other artists put this artist on.
+export async function listFeaturedOn(artistId) {
+  const credits = must(await supabase.from("song_credits").select("song_id, roles, can_edit, can_delete").eq("artist_id", artistId));
+  const ids = credits.map((c) => c.song_id);
+  if (!ids.length) return [];
+  const songs = must(await supabase.from("songs").select("*").in("id", ids).neq("artist_id", artistId).order("created_at", { ascending: false }));
+  const byId = Object.fromEntries(credits.map((c) => [c.song_id, c]));
+  return songs.map((s) => ({ ...s, credit: byId[s.id] }));
+}
+
+// Owner: deletes the audio file too (which removes the song). Collaborator: removes the song only.
+export async function deleteSong(song) {
+  const user = await currentUser();
+  if (song.artist_id === user.id) {
+    await deleteMedia(song.audio_media_id);
+    if (song.cover_media_id) deleteMedia(song.cover_media_id).catch(() => {});
+    return;
+  }
+  const gone = must(await supabase.from("songs").delete().eq("id", song.id).select("id"));
+  if (!gone.length) throw new Error("You don't have permission to delete this song.");
+}
+
+// Square-crop + resize a picture in the browser before uploading (keeps uploads small).
+export async function squareImage(file, size = 640) {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const canvas = Object.assign(document.createElement("canvas"), { width: size, height: size });
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#111833"; // JPEG has no transparency: fill see-through PNG areas with the site's navy
+  ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
+  const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.88));
+  return new File([blob], (file.name.replace(/\.[^.]+$/, "") || "photo") + ".jpg", { type: "image/jpeg" });
 }
 
 // ---------- page guard ----------

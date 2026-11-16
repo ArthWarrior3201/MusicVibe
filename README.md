@@ -17,8 +17,13 @@ Part of three repos:
 | `index.html` | Landing page (skips to the app if you're signed in) |
 | `auth.html` | Sign in · Sign up · Forgot password · Set new password · Pick username. Choose a mode with `?mode=signin\|signup\|reset\|newpassword\|username`, and set where to go afterwards with `&next=/path` |
 | `app.html` | Signed-in home (feed placeholder) |
+| `song.html?id=` | Song page: player, artists, credits grouped by role, and the **About the artist** tile for the main artist |
+| `artist.html?id=` | Artist page: round photo, name, description, songs, "Appears on" |
 
 ## Shared core (`core/`)
+
+* `ui.js`: shared building blocks: `artistTile()` (wide crop of the square photo, never stretched; bigger name when there's no description), `creditsList()`, `avatar()`, `artistLine()`
+* `img/`: logo + favicons
 
 * `supabase-config.js`: **paste your Supabase Project URL + anon/publishable key, and your Vercel URL (`API_BASE`) here** (all safe to make public; never the service_role key)
 * `mv.js`: Supabase client + `signUpWithEmail`, `signInWithEmail`, `signInWithGoogle`, `resetPassword`, `updatePassword`, `uploadAudio`, `mediaUrl`, `deleteMedia`, `notifySignIn`,

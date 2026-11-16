@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/favicon-64.png">
+  <link rel="apple-touch-icon" href="img/logo-192.png">
+  <link rel="stylesheet" href="css/style.css">
+  <title>Artist · MusicVibe</title>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="app.html">
+    <img class="logo" src="img/logo-192.png" alt="" width="34" height="34">
+    MusicVibe
+  </a>
+  <div class="right">
+    <a class="btn ghost small" href="../ProArtists/">ProArtists</a>
+  </div>
+</header>
+
+<main class="container" id="main" hidden>
+  <section class="panel">
+    <div class="artist-hero">
+      <div id="photo"></div>
+      <div>
+        <div class="eyebrow">Artist</div>
+        <h1 id="name"></h1>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="bio-panel" hidden>
+    <h2>About</h2>
+    <p class="artist-bio" id="bio"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Songs</h2>
+    <ul class="song-rows" id="songs"></ul>
+  </section>
+
+  <section class="panel" id="featured-panel" hidden>
+    <h2>Appears on</h2>
+    <ul class="song-rows" id="featured"></ul>
+  </section>
+</main>
+
+<main class="container" id="missing" hidden>
+  <section class="panel"><h2>Artist not found</h2><p class="muted"><a href="app.html">Go home</a></p></section>
+</main>
+
+<script type="module">
+  import { requireUser, getArtist, listArtistSongs, listFeaturedOn, mediaUrl } from "./core/mv.js";
+  import { avatar, el, songUrl } from "./core/ui.js";
+
+  await requireUser();
+  const $ = (s) => document.querySelector(s);
+  const id = new URLSearchParams(location.search).get("id");
+  const artist = id ? await getArtist(id).catch(() => null) : null; // bad/unknown id -> "not found"
+
+  const row = (song, fallbackPic) => {
+    const pic = mediaUrl(song.cover_media_id) || fallbackPic;
+    return el("li", {}, el("a", { href: songUrl(song.id) },
+      el("span", { className: "cover-sm" }, el("img", { src: pic || "img/logo-192.png", alt: "", loading: "lazy" })),
+      el("span", { textContent: song.title })));
+  };
+
+  if (!artist) {
+    $("#missing").hidden = false;
+  } else {
+    document.title = `${artist.name} · MusicVibe`;
+    $("#photo").append(avatar(artist, { size: 160, shape: "circle" }));
+    $("#name").textContent = artist.name;
+    if (artist.bio.trim()) { $("#bio").textContent = artist.bio; $("#bio-panel").hidden = false; }
+    const [songs, featured] = await Promise.all([listArtistSongs(artist.id), listFeaturedOn(artist.id)]);
+    const pic = mediaUrl(artist.avatar_media_id);
+    $("#songs").append(...(songs.length ? songs.map((s) => row(s, pic)) : [el("li", { className: "muted", textContent: "No songs yet." })]));
+    if (featured.length) { $("#featured").append(...featured.map((s) => row(s, null))); $("#featured-panel").hidden = false; }
+    $("#main").hidden = false;
+  }
+</script>
+</body>
+</html>
