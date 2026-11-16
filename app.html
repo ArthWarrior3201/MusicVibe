@@ -114,7 +114,7 @@
             el("span", { className: "art", textContent: "♫" }),
             el("strong", { textContent: p.name }),
             el("span", { className: "muted", textContent: p.is_public ? "Public" : "Private" })))
-        : [el("p", { className: "muted", style: "margin:0", textContent: "No playlists yet. Create one above, then add songs from any song page." })]));
+        : [el("p", { className: "muted", style: "margin:0", textContent: "You haven't created any playlists yet. Create one above, then add songs to it from any song's page." })]));
     } catch (e) { $("#playlists").replaceChildren(el("p", { className: "muted", textContent: friendlyError(e) })); }
   }
 
@@ -135,7 +135,7 @@
     try {
       const artists = await listFollowing();
       $("#following").replaceChildren(...(artists.length ? artists.map(chip)
-        : [el("p", { className: "muted", style: "margin:0", textContent: "You're not following anyone yet. Open an artist and hit Follow." })]));
+        : [el("p", { className: "muted", style: "margin:0", textContent: "You're not following anyone yet. Open an artist's profile and hit Follow." })]));
     } catch (e) { $("#following").replaceChildren(el("p", { className: "muted", textContent: friendlyError(e) })); }
   }
 
