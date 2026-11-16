@@ -1,10 +1,16 @@
 // MusicVibe shared core: Supabase client + auth + profile helpers.
 // Used by MusicVibe and ProArtists (imported from /MusicVibe/core/mv.js).
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, SITES } from "./supabase-config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SITES, API_BASE } from "./supabase-config.js";
 
-export { SITES };
+export { SITES, API_BASE };
 export const isConfigured = !SUPABASE_URL.includes("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
+export const isApiConfigured = !API_BASE.includes("YOUR_");
+
+// Read before Supabase strips the tokens from the URL: did we just come back from Google?
+// (Email links carry type=signup/recovery/...; a Google return has a token but no type.)
+const hashParams = new URLSearchParams(location.hash.slice(1));
+const cameBackFromOAuth = hashParams.has("access_token") && !hashParams.has("type");
 
 // ---------- "Keep me signed in" ----------
 // Remembered sessions go in localStorage (survive closing the browser),
@@ -42,6 +48,18 @@ export function safeNext(raw, fallback = SITES.musicvibe + "app.html") {
     if (url.origin !== location.origin) return fallback;
     return url.pathname + url.search + url.hash;
   } catch { return fallback; }
+}
+
+// "artist" when the flow started from ProArtists, so emails use the ProArtists templates.
+export function appFor(next) {
+  return String(next || "").startsWith(SITES.proartists) ? "artist" : "listener";
+}
+
+function authPageUrl(mode, next) {
+  const u = new URL(abs(SITES.musicvibe + "auth.html"));
+  u.searchParams.set("mode", mode);
+  if (next) u.searchParams.set("next", next);
+  return u.href;
 }
 
 export function authUrl(mode = "signin", next = location.pathname + location.search) {
@@ -93,15 +111,15 @@ export async function createProfile(user, { username, displayName }) {
 // ---------- auth modes ----------
 // Email sign-up. The database creates the profile from { username, display_name }.
 // Returns { needsConfirmation } — true when Supabase wants the email confirmed first.
-export async function signUpWithEmail({ email, password, username, displayName, remember = true }) {
+export async function signUpWithEmail({ email, password, username, displayName, remember = true, next }) {
   setRemember(remember);
   if (await isUsernameTaken(username)) throw coded("username-taken");
   const { data, error } = await auth.signUp({
     email,
     password,
     options: {
-      data: { username, display_name: displayName },
-      emailRedirectTo: abs(SITES.musicvibe + "auth.html?mode=signin"),
+      data: { username, display_name: displayName, signup_app: appFor(next) },
+      emailRedirectTo: authPageUrl("signin", next),
     },
   });
   if (error) {
@@ -123,20 +141,15 @@ export async function signInWithEmail({ email, password, remember = true }) {
 // Google always leaves the page and comes back to auth.html, which finishes the sign-in.
 export async function signInWithGoogle({ remember = true, next } = {}) {
   setRemember(remember);
-  const back = new URL(abs(SITES.musicvibe + "auth.html"));
-  back.searchParams.set("mode", "signin");
-  if (next) back.searchParams.set("next", next);
   const { error } = await auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: back.href, queryParams: { prompt: "select_account" } },
+    options: { redirectTo: authPageUrl("signin", next), queryParams: { prompt: "select_account" } },
   });
   if (error) throw error;
 }
 
-export async function resetPassword(email) {
-  const { error } = await auth.resetPasswordForEmail(email, {
-    redirectTo: abs(SITES.musicvibe + "auth.html?mode=newpassword"),
-  });
+export async function resetPassword(email, next) {
+  const { error } = await auth.resetPasswordForEmail(email, { redirectTo: authPageUrl("newpassword", next) });
   if (error) throw error;
 }
 
@@ -145,12 +158,8 @@ export async function updatePassword(password) {
   if (error) throw error;
 }
 
-export async function resendConfirmation(email) {
-  const { error } = await auth.resend({
-    type: "signup",
-    email,
-    options: { emailRedirectTo: abs(SITES.musicvibe + "auth.html?mode=signin") },
-  });
+export async function resendConfirmation(email, next) {
+  const { error } = await auth.resend({ type: "signup", email, options: { emailRedirectTo: authPageUrl("signin", next) } });
   if (error) throw error;
 }
 
@@ -168,6 +177,79 @@ export async function currentUser() {
 export function onAuthChange(cb) {
   const { data } = auth.onAuthStateChange((event, session) => cb(event, session?.user ?? null));
   return () => data.subscription.unsubscribe();
+}
+
+// ---------- MV-Storage API (Vercel) ----------
+async function api(path, { method = "GET", json, body, headers = {}, keepalive } = {}) {
+  const { data } = await auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch(API_BASE + path, {
+    method,
+    keepalive,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(json ? { "Content-Type": "application/json" } : {}),
+      ...headers,
+    },
+    body: json ? JSON.stringify(json) : body,
+  });
+  const out = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+  if (!res.ok) throw Object.assign(new Error(out?.error || `Server error (${res.status})`), { status: res.status });
+  return out;
+}
+
+// "New sign-in" email. Fire and forget: never blocks or breaks sign-in.
+export function notifySignIn({ app = "listener", method = "password" } = {}) {
+  if (!isApiConfigured) return;
+  api("/api/notify-signin", { method: "POST", json: { app, method }, keepalive: true }).catch(() => {});
+}
+export const justSignedInWithGoogle = () => cameBackFromOAuth;
+
+// Upload an audio file in 4 MB parts. onProgress(0..1). Returns { id, url }.
+export async function uploadAudio(file, { onProgress = () => {} } = {}) {
+  const { id, chunkSize, partCount } = await api("/api/upload/start", {
+    method: "POST", json: { filename: file.name, size: file.size },
+  });
+  let done = 0;
+  const sendPart = async (n) => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await api(`/api/upload/chunk?id=${id}&n=${n}`, {
+          method: "PUT",
+          body: file.slice(n * chunkSize, (n + 1) * chunkSize),
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+        onProgress(++done / partCount);
+        return;
+      } catch (e) {
+        if (attempt >= 3 || (e.status && e.status < 500 && e.status !== 429)) throw e;
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+  };
+  // 3 parts at a time
+  let nextPart = 0;
+  await Promise.all(Array.from({ length: Math.min(3, partCount) }, async () => {
+    while (nextPart < partCount) await sendPart(nextPart++);
+  }));
+  await api(`/api/upload/finish?id=${id}`, { method: "POST" });
+  return { id, url: mediaUrl(id) };
+}
+
+export const mediaUrl = (id) => `${API_BASE}/api/media/${id}`;
+
+export function deleteMedia(id) {
+  return api(`/api/media/${id}`, { method: "DELETE" });
+}
+
+export async function listMyMedia() {
+  const { data, error } = await supabase
+    .from("media_files")
+    .select("id, filename, mime, size, status, created_at")
+    .eq("status", "ready")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
 // ---------- page guard ----------

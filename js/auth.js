@@ -2,12 +2,13 @@ import {
   auth, isConfigured, currentUser, onAuthChange,
   signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, updatePassword,
   resendConfirmation, createProfile, getProfile, isUsernameTaken, normalizeUsername,
-  usernameProblem, friendlyError, safeNext, signOut,
+  usernameProblem, friendlyError, safeNext, signOut, appFor, notifySignIn, justSignedInWithGoogle,
 } from "../core/mv.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const params = new URLSearchParams(location.search);
 const next = safeNext(params.get("next"));
+const app = appFor(next); // "artist" when coming from ProArtists
 
 const forms = {
   signin: $("#form-signin"),
@@ -23,6 +24,15 @@ const COPY = {
   newpassword: ["Set a new password", "Choose a new password for your account."],
   username:    ["Pick your username", "This is how people find you on MusicVibe."],
 };
+
+if (app === "artist") {
+  COPY.signin = ["Welcome back, artist", "Sign in to your ProArtists studio."];
+  COPY.signup = ["Join ProArtists", "Create your account, then set up your artist profile."];
+  $(".brand").lastChild.textContent = " ProArtists";
+  $(".brand").href = "../ProArtists/";
+  $("#foot").innerHTML = 'Just here to listen? <a href="./">Go to MusicVibe</a>.';
+  document.title = "Sign in · ProArtists";
+}
 
 let mode = "signin";
 let busy = false; // stops the auth listener from redirecting mid-action
@@ -157,10 +167,11 @@ forms.signin.addEventListener("submit", (e) => {
   withBusy(e.target, async () => {
     try {
       const user = await signInWithEmail({ email, password: f.password.value, remember: f.remember.checked });
+      notifySignIn({ app, method: "password" });
       await routeSignedIn(user);
     } catch (err) {
       if (err.code !== "email_not_confirmed") throw err;
-      await resendConfirmation(email).catch(() => {});
+      await resendConfirmation(email, next).catch(() => {});
       showAlert(`Confirm your email first. We just sent a new link to ${email}.`, "info");
     }
   });
@@ -179,7 +190,7 @@ forms.signup.addEventListener("submit", (e) => {
   if (f.password.value.length < 8) return showAlert("Password needs at least 8 characters.");
   withBusy(e.target, async () => {
     const { needsConfirmation } = await signUpWithEmail({
-      email, password: f.password.value, username, displayName, remember: f.remember.checked,
+      email, password: f.password.value, username, displayName, remember: f.remember.checked, next,
     });
     if (!needsConfirmation) { location.replace(next); return; }
     e.target.reset();
@@ -194,7 +205,7 @@ forms.reset.addEventListener("submit", (e) => {
   const email = e.target.elements.email.value.trim();
   if (!isEmail(email)) return showAlert("Enter a valid email.");
   withBusy(e.target, async () => {
-    await resetPassword(email);
+    await resetPassword(email, next);
     // Same message either way, so nobody can test which emails have accounts.
     showAlert(`If an account exists for ${email}, a reset link is on its way. Check your inbox.`, "info");
   });
@@ -296,6 +307,7 @@ if (isConfigured) {
     if (user) setMode("newpassword");
     else { setMode("reset"); showAlert("That reset link has expired. Request a new one."); }
   } else if (user) {
+    if (justSignedInWithGoogle()) notifySignIn({ app, method: "google" });
     setMode(requested === "username" ? "username" : requested);
     routeSignedIn(user).catch((e) => showAlert(friendlyError(e)));
   } else {

@@ -6,6 +6,9 @@
 export const SUPABASE_URL = "https://YOUR_PROJECT_REF.supabase.co";
 export const SUPABASE_ANON_KEY = "YOUR_ANON_OR_PUBLISHABLE_KEY";
 
+// Your Vercel deployment of MV-Storage (no trailing slash), e.g. https://mv-storage.vercel.app
+export const API_BASE = "https://YOUR_VERCEL_PROJECT.vercel.app";
+
 // Where each app lives. On GitHub Pages both sites share the origin
 // https://arthwarrior3201.github.io, so the login session is shared too.
 export const SITES = {

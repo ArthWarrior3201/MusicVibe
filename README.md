@@ -7,7 +7,8 @@ Part of three repos:
 
 * **MusicVibe** (this repo): listeners: accounts, feed, playlists. Also hosts the shared login code in `core/`.
 * **ProArtists**: artist profiles, song uploads, collaborators.
-* **MV-Backend**: Supabase database + permission rules, setup docs, and (soon) the Cloudflare upload Worker.
+* **MV-Backend**: Supabase database + permission rules, setup docs.
+* **MV-Storage** (private): Vercel API: song uploads/streaming (stored in that repo) and all emails.
 
 ## Pages
 
@@ -19,8 +20,8 @@ Part of three repos:
 
 ## Shared core (`core/`)
 
-* `supabase-config.js`: **paste your Supabase Project URL + anon/publishable key here** (safe to make public; never the service_role key)
-* `mv.js`: Supabase client + `signUpWithEmail`, `signInWithEmail`, `signInWithGoogle`, `resetPassword`, `updatePassword`,
+* `supabase-config.js`: **paste your Supabase Project URL + anon/publishable key, and your Vercel URL (`API_BASE`) here** (all safe to make public; never the service_role key)
+* `mv.js`: Supabase client + `signUpWithEmail`, `signInWithEmail`, `signInWithGoogle`, `resetPassword`, `updatePassword`, `uploadAudio`, `mediaUrl`, `deleteMedia`, `notifySignIn`,
   `requireUser()` (page guard), username helpers, friendly error messages.
 
 ProArtists imports `/MusicVibe/core/mv.js` directly, so don't rename this folder.
