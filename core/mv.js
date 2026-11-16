@@ -389,6 +389,9 @@ const MESSAGES = {
 export function friendlyError(e) {
   if (!e) return "Something went wrong.";
   if (MESSAGES[e.code]) return MESSAGES[e.code];
+  if (/invalid api key|no api key/i.test(e.message || "")) {
+    return "The site's Supabase key isn't accepted. Check SUPABASE_ANON_KEY in core/supabase-config.js.";
+  }
   if (e.name === "AuthRetryableFetchError" || /failed to fetch|networkerror/i.test(e.message)) {
     return "Can't reach the server. Check your connection.";
   }

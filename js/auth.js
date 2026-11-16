@@ -141,7 +141,10 @@ function wireUsername(form) {
         const taken = await isUsernameTaken(clean);
         if (mine !== seq) return;
         setHint(hint, taken ? `@${clean} is taken` : `@${clean} is available`, taken ? "bad" : "ok");
-      } catch { if (mine === seq) setHint(hint, ""); }
+      } catch (err) {
+        console.error(err);
+        if (mine === seq) setHint(hint, `Couldn't check right now: ${friendlyError(err)}`, "bad");
+      }
     }, 350);
   });
 }
