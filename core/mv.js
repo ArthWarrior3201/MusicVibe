@@ -322,7 +322,7 @@ export async function listFeaturedOn(artistId) {
   if (!ids.length) return [];
   const songs = must(await supabase.from("songs").select("*").in("id", ids).neq("artist_id", artistId).order("created_at", { ascending: false }));
   const byId = Object.fromEntries(credits.map((c) => [c.song_id, c]));
-  return songs.map((s) => ({ ...s, credit: byId[s.id] }));
+  return withArtists(songs.map((s) => ({ ...s, credit: byId[s.id] })));
 }
 
 // Owner: deletes the audio file too (which removes the song). Collaborator: removes the song only.
@@ -335,6 +335,122 @@ export async function deleteSong(song) {
   }
   const gone = must(await supabase.from("songs").delete().eq("id", song.id).select("id"));
   if (!gone.length) throw new Error("You don't have permission to delete this song.");
+}
+
+// ---------- following ----------
+export async function isFollowing(artistId) {
+  const user = await currentUser();
+  const rows = must(await supabase.from("follows").select("artist_id").eq("follower_id", user.id).eq("artist_id", artistId));
+  return rows.length > 0;
+}
+
+export async function follow(artistId) {
+  const user = await currentUser();
+  const { error } = await supabase.from("follows").insert({ follower_id: user.id, artist_id: artistId });
+  if (error && error.code !== "23505") throw error; // already following is fine
+}
+
+export async function unfollow(artistId) {
+  const user = await currentUser();
+  must(await supabase.from("follows").delete().eq("follower_id", user.id).eq("artist_id", artistId));
+}
+
+export async function followerCount(artistId) {
+  const { count, error } = await supabase.from("follows").select("artist_id", { count: "exact", head: true }).eq("artist_id", artistId);
+  if (error) throw error;
+  return count || 0;
+}
+
+export async function listFollowing() {
+  const user = await currentUser();
+  const rows = must(await supabase.from("follows").select("artist_id, created_at").eq("follower_id", user.id).order("created_at", { ascending: false }));
+  return getArtists(rows.map((r) => r.artist_id));
+}
+
+export async function getArtists(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return [];
+  return must(await supabase.from("artists").select("*").in("id", unique));
+}
+
+// songs -> same songs with .artist (main artist row) attached
+async function withArtists(songs) {
+  const artists = await getArtists(songs.map((x) => x.artist_id));
+  const byId = Object.fromEntries(artists.map((a) => [a.id, a]));
+  return songs.map((x) => ({ ...x, artist: byId[x.artist_id] || null }));
+}
+
+// ---------- feed, new releases, search ----------
+// Newest songs from artists you follow.
+export async function getFeed(limit = 30) {
+  const user = await currentUser();
+  const follows = must(await supabase.from("follows").select("artist_id").eq("follower_id", user.id));
+  if (!follows.length) return [];
+  const songs = must(await supabase.from("songs").select("*").in("artist_id", follows.map((f) => f.artist_id))
+    .order("created_at", { ascending: false }).limit(limit));
+  return withArtists(songs);
+}
+
+export async function newReleases(limit = 20) {
+  return withArtists(must(await supabase.from("songs").select("*").order("created_at", { ascending: false }).limit(limit)));
+}
+
+export async function search(query) {
+  const q = query.trim().replace(/[%_,()]/g, "");
+  if (!q) return { songs: [], artists: [] };
+  const [songs, artists] = await Promise.all([
+    supabase.from("songs").select("*").ilike("title", `%${q}%`).order("created_at", { ascending: false }).limit(20),
+    supabase.from("artists").select("*").ilike("name", `%${q}%`).limit(12),
+  ]);
+  return { songs: await withArtists(must(songs)), artists: must(artists) };
+}
+
+// ---------- playlists ----------
+export async function listMyPlaylists() {
+  const user = await currentUser();
+  return must(await supabase.from("playlists").select("*").eq("owner_id", user.id).order("created_at", { ascending: false }));
+}
+
+export async function createPlaylist({ name, description = "", isPublic = true }) {
+  const user = await currentUser();
+  return must(await supabase.from("playlists").insert({ owner_id: user.id, name: name.trim(), description: description.trim(), is_public: isPublic }).select().single());
+}
+
+export async function updatePlaylist(id, { name, description, isPublic }) {
+  const row = {};
+  if (name !== undefined) row.name = name.trim();
+  if (description !== undefined) row.description = description.trim();
+  if (isPublic !== undefined) row.is_public = isPublic;
+  return must(await supabase.from("playlists").update(row).eq("id", id).select().single());
+}
+
+export async function deletePlaylist(id) {
+  must(await supabase.from("playlists").delete().eq("id", id));
+}
+
+// { playlist, owner (profile), songs: [song + .artist + .added_at] } or null
+export async function getPlaylist(id) {
+  const playlist = must(await supabase.from("playlists").select("*").eq("id", id).maybeSingle());
+  if (!playlist) return null;
+  const [owner, entries] = await Promise.all([
+    getProfile(playlist.owner_id),
+    supabase.from("playlist_songs").select("song_id, added_at").eq("playlist_id", id).order("added_at"),
+  ]);
+  const list = must(entries);
+  const songs = list.length ? must(await supabase.from("songs").select("*").in("id", list.map((e) => e.song_id))) : [];
+  const byId = Object.fromEntries(songs.map((x) => [x.id, x]));
+  const ordered = list.map((e) => byId[e.song_id] && { ...byId[e.song_id], added_at: e.added_at }).filter(Boolean);
+  return { playlist, owner, songs: await withArtists(ordered) };
+}
+
+export async function addToPlaylist(playlistId, songId) {
+  const { error } = await supabase.from("playlist_songs").insert({ playlist_id: playlistId, song_id: songId });
+  if (error?.code === "23505") throw Object.assign(new Error("That song is already in this playlist."), { code: "already-in-playlist" });
+  if (error) throw error;
+}
+
+export async function removeFromPlaylist(playlistId, songId) {
+  must(await supabase.from("playlist_songs").delete().eq("playlist_id", playlistId).eq("song_id", songId));
 }
 
 // Square-crop + resize a picture in the browser before uploading (keeps uploads small).

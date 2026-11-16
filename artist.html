@@ -26,6 +26,8 @@
       <div>
         <div class="eyebrow">Artist</div>
         <h1 id="name"></h1>
+        <p class="muted" id="followers" style="margin:0 0 10px"></p>
+        <div id="follow"></div>
       </div>
     </div>
   </section>
@@ -51,20 +53,13 @@
 </main>
 
 <script type="module">
-  import { requireUser, getArtist, listArtistSongs, listFeaturedOn, mediaUrl } from "./core/mv.js";
-  import { avatar, el, songUrl } from "./core/ui.js";
+  import { requireUser, getArtist, listArtistSongs, listFeaturedOn, followerCount } from "./core/mv.js";
+  import { avatar, el, songList, followButton } from "./core/ui.js";
 
-  await requireUser();
+  const { user } = await requireUser();
   const $ = (s) => document.querySelector(s);
   const id = new URLSearchParams(location.search).get("id");
   const artist = id ? await getArtist(id).catch(() => null) : null; // bad/unknown id -> "not found"
-
-  const row = (song, fallbackPic) => {
-    const pic = mediaUrl(song.cover_media_id) || fallbackPic;
-    return el("li", {}, el("a", { href: songUrl(song.id) },
-      el("span", { className: "cover-sm" }, el("img", { src: pic || "img/logo-192.png", alt: "", loading: "lazy" })),
-      el("span", { textContent: song.title })));
-  };
 
   if (!artist) {
     $("#missing").hidden = false;
@@ -73,10 +68,15 @@
     $("#photo").append(avatar(artist, { size: 160, shape: "circle" }));
     $("#name").textContent = artist.name;
     if (artist.bio.trim()) { $("#bio").textContent = artist.bio; $("#bio-panel").hidden = false; }
-    const [songs, featured] = await Promise.all([listArtistSongs(artist.id), listFeaturedOn(artist.id)]);
-    const pic = mediaUrl(artist.avatar_media_id);
-    $("#songs").append(...(songs.length ? songs.map((s) => row(s, pic)) : [el("li", { className: "muted", textContent: "No songs yet." })]));
-    if (featured.length) { $("#featured").append(...featured.map((s) => row(s, null))); $("#featured-panel").hidden = false; }
+    let count = await followerCount(artist.id).catch(() => 0);
+    const showCount = () => { $("#followers").textContent = `${count} follower${count === 1 ? "" : "s"}`; };
+    showCount();
+    if (artist.id !== user.id) $("#follow").append(followButton(artist.id, { onChange: (on) => { count += on ? 1 : -1; showCount(); } }));
+    const [songsRaw, featuredRaw] = await Promise.all([listArtistSongs(artist.id), listFeaturedOn(artist.id)]);
+    const songs = songsRaw.map((s) => ({ ...s, artist }));
+    $("#songs").append(...(songs.length ? songList(songs) : [el("li", { className: "muted", textContent: "No songs yet." })]));
+    $("#songs").className = "song-list";
+    if (featuredRaw.length) { $("#featured").append(...songList(featuredRaw)); $("#featured").className = "song-list"; $("#featured-panel").hidden = false; }
     $("#main").hidden = false;
   }
 </script>

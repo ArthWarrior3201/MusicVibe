@@ -18,6 +18,11 @@ const forms = {
   newpassword: $("#form-newpassword"),
   username: $("#form-username"),
 };
+// Browser tab title for each screen.
+const TAB = {
+  signin: "Sign In", signup: "Sign Up", reset: "Reset Password", code: "Verify Email",
+  newpassword: "New Password", username: "Pick a Username",
+};
 const COPY = {
   signin:      ["Welcome back", "Sign in to your feed and playlists."],
   signup:      ["Join MusicVibe", "Make playlists, follow artists, build your feed."],
@@ -33,7 +38,6 @@ if (app === "artist") {
   $(".brand").lastChild.textContent = " ProArtists";
   $(".brand").href = "../ProArtists/";
   $("#foot").innerHTML = 'Just here to listen? <a href="./">Go to MusicVibe</a>.';
-  document.title = "Sign in · ProArtists";
 }
 
 let mode = "signin";
@@ -56,6 +60,7 @@ function setMode(m, { keepAlert = false } = {}) {
   mode = m;
   for (const [k, f] of Object.entries(forms)) f.hidden = k !== m;
   $("#title").textContent = COPY[m][0];
+  document.title = m === "code" && codePurpose === "recovery" ? "Reset Password" : TAB[m];
   $("#subtitle").textContent = COPY[m][1];
   const entry = m === "signin" || m === "signup";
   $("#tabs").hidden = !entry;

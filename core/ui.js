@@ -1,5 +1,5 @@
 // Shared UI pieces for MusicVibe + ProArtists (no framework, builds DOM safely).
-import { SITES, mediaUrl, ROLES } from "./mv.js";
+import { SITES, mediaUrl, ROLES, isFollowing, follow, unfollow, friendlyError } from "./mv.js";
 
 export function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -9,6 +9,9 @@ export function el(tag, props = {}, ...children) {
 
 export const artistUrl = (id) => `${SITES.musicvibe}artist.html?id=${encodeURIComponent(id)}`;
 export const songUrl = (id) => `${SITES.musicvibe}song.html?id=${encodeURIComponent(id)}`;
+export const playlistUrl = (id) => `${SITES.musicvibe}playlist.html?id=${encodeURIComponent(id)}`;
+const LOGO = `${SITES.musicvibe}img/logo-192.png`;
+export const coverOf = (song) => mediaUrl(song.cover_media_id) || mediaUrl(song.artist?.avatar_media_id) || LOGO;
 
 // Picture or a gradient with the first letter. shape: "circle" | "square"
 export function avatar(artist, { size = 48, shape = "circle", cls = "" } = {}) {
@@ -72,4 +75,97 @@ export function artistLine(credits, artists, mainId) {
     span.append(c.artist_id ? el("a", { href: artistUrl(c.artist_id), textContent: c.name }) : c.name);
   });
   return span;
+}
+
+// ---------- Follow button ----------
+// onChange(following) lets a page update a follower count.
+export function followButton(artistId, { onChange } = {}) {
+  const btn = el("button", { className: "btn ghost small follow-btn", textContent: "Follow", type: "button" });
+  let following = false;
+  const paint = () => {
+    btn.textContent = following ? "Following" : "Follow";
+    btn.classList.toggle("on", following);
+    btn.setAttribute("aria-pressed", String(following));
+  };
+  isFollowing(artistId).then((f) => { following = f; paint(); }).catch(() => {});
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      following ? await unfollow(artistId) : await follow(artistId);
+      following = !following;
+      paint();
+      onChange?.(following);
+    } catch (e) { alert(friendlyError(e)); }
+    btn.disabled = false;
+  };
+  return btn;
+}
+
+// ---------- mini player (bottom bar, plays a queue) ----------
+let player;
+function ensurePlayer() {
+  if (player) return player;
+  const audio = el("audio", { controls: true, preload: "auto" });
+  const cover = el("img", { className: "mp-cover", alt: "" });
+  const title = el("a", { className: "mp-title" });
+  const artist = el("a", { className: "mp-artist" });
+  const prev = el("button", { className: "mp-btn", type: "button", title: "Previous", textContent: "⏮" });
+  const next = el("button", { className: "mp-btn", type: "button", title: "Next", textContent: "⏭" });
+  const close = el("button", { className: "mp-btn", type: "button", title: "Close", textContent: "✕" });
+  const bar = el("div", { className: "mini-player", hidden: true },
+    cover, el("div", { className: "mp-meta" }, title, artist), prev, audio, next, close);
+  document.body.append(bar);
+  document.body.classList.add("has-player-space");
+  player = { bar, audio, cover, title, artist, prev, next, queue: [], index: 0 };
+  const load = (i) => {
+    const song = player.queue[i];
+    if (!song) return;
+    player.index = i;
+    audio.src = mediaUrl(song.audio_media_id);
+    cover.src = coverOf(song);
+    title.textContent = song.title;
+    title.href = songUrl(song.id);
+    artist.textContent = song.artist?.name || "";
+    if (song.artist) artist.href = artistUrl(song.artist.id); else artist.removeAttribute("href");
+    prev.disabled = i === 0;
+    next.disabled = i >= player.queue.length - 1;
+    audio.play().catch(() => {});
+    document.querySelectorAll("[data-playing]").forEach((n) => n.removeAttribute("data-playing"));
+    document.querySelectorAll(`[data-song-id="${song.id}"]`).forEach((n) => n.setAttribute("data-playing", ""));
+  };
+  player.load = load;
+  prev.onclick = () => load(player.index - 1);
+  next.onclick = () => load(player.index + 1);
+  audio.onended = () => { if (player.index < player.queue.length - 1) load(player.index + 1); };
+  close.onclick = () => { audio.pause(); bar.hidden = true; };
+  return player;
+}
+
+export function playQueue(songs, start = 0) {
+  const p = ensurePlayer();
+  p.queue = songs;
+  p.bar.hidden = false;
+  p.load(start);
+}
+
+// ---------- song row: cover · title/artist · actions ----------
+// opts.queue + opts.index make the play button play through the list.
+export function songRow(song, { queue = [song], index = 0, actions = [] } = {}) {
+  const play = el("button", { className: "row-play", type: "button", title: `Play ${song.title}`, textContent: "▶" });
+  play.onclick = () => playQueue(queue, index);
+  return el("li", { className: "song-row" },
+    el("span", { className: "cover-sm" }, el("img", { src: coverOf(song), alt: "", loading: "lazy" }), play),
+    el("span", { className: "song-row-text" },
+      el("a", { className: "song-row-title", href: songUrl(song.id), textContent: song.title }),
+      song.artist ? el("a", { className: "song-row-artist", href: artistUrl(song.artist.id), textContent: song.artist.name }) : null),
+    ...actions,
+  );
+}
+
+export function songList(songs, { actions } = {}) {
+  return songs.map((s, i) => {
+    const row = songRow(s, { queue: songs, index: i, actions: actions ? actions(s, i) : [] });
+    row.dataset.songId = s.id;
+    return row;
+  });
 }

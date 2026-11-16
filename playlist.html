@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playlist · MusicVibe</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="img/favicon-64.png">
+  <link rel="apple-touch-icon" href="img/logo-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="app.html">
+    <img class="logo" src="img/logo-192.png" alt="" width="34" height="34">
+    MusicVibe
+  </a>
+  <div class="right">
+    <a class="btn ghost small" href="app.html">Home</a>
+  </div>
+</header>
+
+<main class="container" id="main" hidden>
+  <section class="panel">
+    <div class="song-head">
+      <div class="cover playlist-art">♫</div>
+      <div>
+        <div class="eyebrow" id="kind">Playlist</div>
+        <h1 id="title"></h1>
+        <p class="muted" id="desc" style="margin:0 0 6px"></p>
+        <p class="muted" id="meta" style="margin:0"></p>
+      </div>
+    </div>
+    <div class="row-btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
+      <button class="btn primary small" id="play-all">▶ Play all</button>
+      <button class="btn ghost small" id="edit" hidden>Edit</button>
+      <button class="btn ghost small" id="delete" hidden>Delete playlist</button>
+    </div>
+
+    <form id="edit-form" hidden style="margin-top:16px">
+      <label>Name <input type="text" name="name" maxlength="80" required></label>
+      <label>Description <textarea name="description" maxlength="300" style="min-height:60px"></textarea></label>
+      <label class="check"><input type="checkbox" name="isPublic"> Public (anyone signed in can see it)</label>
+      <div style="display:flex;gap:8px">
+        <button class="btn primary small" type="submit">Save changes</button>
+        <button class="btn ghost small" type="button" id="edit-cancel">Cancel</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <ul class="song-list" id="songs"></ul>
+  </section>
+</main>
+
+<main class="container" id="missing" hidden>
+  <section class="panel"><h2>Playlist not found</h2><p class="muted">It may be private or deleted. <a href="app.html">Go home</a></p></section>
+</main>
+
+<script type="module">
+  import {
+    requireUser, getPlaylist, updatePlaylist, deletePlaylist, removeFromPlaylist, friendlyError,
+  } from "./core/mv.js";
+  import { el, songList, playQueue } from "./core/ui.js";
+
+  const { user } = await requireUser();
+  const $ = (s) => document.querySelector(s);
+  const id = new URLSearchParams(location.search).get("id");
+  let data = id ? await getPlaylist(id).catch(() => null) : null;
+
+  if (!data) {
+    $("#missing").hidden = false;
+  } else {
+    const mine = data.playlist.owner_id === user.id;
+
+    function render() {
+      const { playlist, owner, songs } = data;
+      document.title = `${playlist.name} · MusicVibe`;
+      $("#title").textContent = playlist.name;
+      $("#desc").textContent = playlist.description;
+      $("#desc").hidden = !playlist.description;
+      $("#kind").textContent = playlist.is_public ? "Public playlist" : "Private playlist";
+      $("#meta").textContent = `${owner ? "@" + owner.username : ""} · ${songs.length} song${songs.length === 1 ? "" : "s"}`;
+      $("#play-all").disabled = !songs.length;
+      $("#play-all").onclick = () => playQueue(songs, 0);
+      $("#songs").replaceChildren(...(songs.length
+        ? songList(songs, {
+            actions: mine ? (s) => [Object.assign(el("button", { className: "btn ghost small", textContent: "Remove", type: "button" }), {
+              onclick: async () => {
+                try { await removeFromPlaylist(playlist.id, s.id); data.songs = data.songs.filter((x) => x.id !== s.id); render(); }
+                catch (e) { alert(friendlyError(e)); }
+              },
+            })] : undefined,
+          })
+        : [el("li", { className: "muted", textContent: mine ? "No songs yet. Open any song and use “Add to playlist”." : "This playlist is empty." })]));
+    }
+
+    if (mine) {
+      $("#edit").hidden = false;
+      $("#delete").hidden = false;
+      const f = $("#edit-form");
+      $("#edit").onclick = () => {
+        f.elements.name.value = data.playlist.name;
+        f.elements.description.value = data.playlist.description;
+        f.elements.isPublic.checked = data.playlist.is_public;
+        f.hidden = false;
+      };
+      $("#edit-cancel").onclick = () => { f.hidden = true; };
+      f.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          data.playlist = await updatePlaylist(data.playlist.id, {
+            name: f.elements.name.value, description: f.elements.description.value, isPublic: f.elements.isPublic.checked,
+          });
+          f.hidden = true;
+          render();
+        } catch (err) { alert(friendlyError(err)); }
+      });
+      $("#delete").onclick = async () => {
+        if (!confirm(`Delete "${data.playlist.name}"? The songs themselves stay on MusicVibe.`)) return;
+        try { await deletePlaylist(data.playlist.id); location.replace("app.html"); }
+        catch (err) { alert(friendlyError(err)); }
+      };
+    }
+
+    render();
+    $("#main").hidden = false;
+  }
+</script>
+</body>
+</html>

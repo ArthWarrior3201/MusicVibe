@@ -30,6 +30,11 @@
       </div>
     </div>
     <audio class="player" id="player" controls preload="metadata"></audio>
+    <div class="add-to-playlist" id="add-pl">
+      <select id="pl-select" aria-label="Playlist"></select>
+      <button class="btn ghost small" id="pl-add" type="button">Add to playlist</button>
+      <span class="hint" id="pl-msg"></span>
+    </div>
   </section>
 
   <div class="two-col">
@@ -46,8 +51,8 @@
 </main>
 
 <script type="module">
-  import { requireUser, getSong, mediaUrl } from "./core/mv.js";
-  import { artistTile, creditsList, artistLine, el } from "./core/ui.js";
+  import { requireUser, getSong, mediaUrl, listMyPlaylists, createPlaylist, addToPlaylist, friendlyError } from "./core/mv.js";
+  import { artistTile, creditsList, artistLine, el, followButton, playlistUrl } from "./core/ui.js";
 
   await requireUser();
   const $ = (s) => document.querySelector(s);
@@ -65,7 +70,36 @@
     $("#cover").append(cover ? el("img", { src: cover, alt: "" }) : el("img", { src: "img/logo-512.png", alt: "" }));
     $("#player").src = mediaUrl(song.audio_media_id);
     // The main artist (who uploaded it on ProArtists) gets the big tile.
-    if (artist) $("#about").append(artistTile(artist));
+    if (artist) {
+      $("#about").append(artistTile(artist));
+      $("#about").append(el("div", { style: "margin-top:10px" }, followButton(artist.id)));
+    }
+
+    // ---------- add to playlist ----------
+    const sel = $("#pl-select");
+    const msg = (t, kind = "") => { $("#pl-msg").textContent = t; $("#pl-msg").className = "hint" + (kind ? " " + kind : ""); };
+    async function fillPlaylists(selectId) {
+      const lists = await listMyPlaylists().catch(() => []);
+      sel.replaceChildren(...lists.map((p) => el("option", { value: p.id, textContent: p.name })),
+        el("option", { value: "__new", textContent: "+ New playlist…" }));
+      if (selectId) sel.value = selectId;
+    }
+    await fillPlaylists();
+    $("#pl-add").onclick = async () => {
+      msg("");
+      try {
+        let pid = sel.value;
+        if (pid === "__new") {
+          const name = prompt("Name your new playlist:");
+          if (!name?.trim()) return;
+          pid = (await createPlaylist({ name })).id;
+          await fillPlaylists(pid);
+        }
+        await addToPlaylist(pid, song.id);
+        const a = el("a", { href: playlistUrl(pid), textContent: "Open playlist" });
+        msg("Added! ", "ok"); $("#pl-msg").append(a);
+      } catch (e) { msg(friendlyError(e), "bad"); }
+    };
     $("#credits").append(creditsList(credits));
     $("#main").hidden = false;
   }

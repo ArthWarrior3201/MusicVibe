@@ -15,6 +15,7 @@
     MusicVibe
   </a>
   <div class="right">
+    <a class="btn ghost small" href="../ProArtists/">ProArtists</a>
     <span class="avatar" id="avatar"></span>
     <button class="btn ghost small" id="signout">Sign out</button>
   </div>
@@ -23,23 +24,53 @@
 <main class="container" id="main" hidden>
   <section class="panel">
     <h2>Hey, <span id="name"></span> 👋</h2>
-    <p class="muted" style="margin:0">@<span id="username"></span></p>
+    <p class="muted" style="margin:0 0 14px">@<span id="username"></span></p>
+    <input class="search-box" id="search" type="search" placeholder="Search songs and artists…" autocomplete="off">
+  </section>
+
+  <section class="panel" id="search-panel" hidden>
+    <h2>Results</h2>
+    <div id="search-artists" class="artist-chips"></div>
+    <ul class="song-list" id="search-songs"></ul>
   </section>
 
   <section class="panel">
-    <h2>Your feed</h2>
-    <p class="muted">Coming next: posts and new releases from artists you follow.</p>
-    <div class="grid">
-      <div class="tile">Feed</div>
-      <div class="tile">Playlists</div>
-      <div class="tile">Following</div>
-      <div class="tile"><a href="../ProArtists/">Artist profile →</a></div>
+    <div class="section-head">
+      <h2>Your feed</h2>
+      <button class="btn ghost small" id="play-feed" hidden>▶ Play all</button>
     </div>
+    <p class="muted" id="feed-empty" hidden>Follow artists to see their new songs here. Find some below in <strong>New releases</strong> or search above.</p>
+    <ul class="song-list" id="feed"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="section-head">
+      <h2>New releases</h2>
+      <button class="btn ghost small" id="play-new" hidden>▶ Play all</button>
+    </div>
+    <ul class="song-list" id="new"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="section-head"><h2>Your playlists</h2></div>
+    <form class="inline-form" id="new-playlist" style="margin:8px 0 14px">
+      <input type="text" name="name" maxlength="80" placeholder="New playlist name">
+      <button class="btn primary small" type="submit">Create playlist</button>
+    </form>
+    <div class="playlist-grid" id="playlists"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Following</h2>
+    <div class="artist-chips" id="following"></div>
   </section>
 </main>
 
 <script type="module">
-  import { requireUser, signOut } from "./core/mv.js";
+  import {
+    requireUser, signOut, getFeed, newReleases, search, listMyPlaylists, createPlaylist, listFollowing, friendlyError,
+  } from "./core/mv.js";
+  import { el, avatar, artistUrl, playlistUrl, songList, playQueue } from "./core/ui.js";
 
   const { profile } = await requireUser();
   const $ = (s) => document.querySelector(s);
@@ -48,17 +79,91 @@
   $("#username").textContent = profile.username;
   const av = $("#avatar");
   if (profile.avatar_url) {
-    const img = new Image();
-    img.src = profile.avatar_url;
-    img.alt = "";
-    img.referrerPolicy = "no-referrer";
-    av.append(img);
+    av.append(Object.assign(new Image(), { src: profile.avatar_url, alt: "", referrerPolicy: "no-referrer" }));
   } else {
     av.textContent = profile.display_name[0].toUpperCase();
   }
-
   $("#signout").onclick = async () => { await signOut(); location.replace("./"); };
   $("#main").hidden = false;
+
+  const empty = (text) => el("li", { className: "muted", textContent: text });
+  const chip = (a) => el("a", { className: "artist-chip", href: artistUrl(a.id) }, avatar(a, { size: 80 }), el("span", { textContent: a.name }));
+
+  // ---------- feed + new releases ----------
+  async function loadSongs() {
+    try {
+      const [feed, fresh] = await Promise.all([getFeed(), newReleases()]);
+      $("#feed").replaceChildren(...songList(feed));
+      $("#feed-empty").hidden = feed.length > 0;
+      $("#play-feed").hidden = !feed.length;
+      $("#play-feed").onclick = () => playQueue(feed, 0);
+      $("#new").replaceChildren(...(fresh.length ? songList(fresh) : [empty("No songs yet. Be the first on ProArtists!")]));
+      $("#play-new").hidden = !fresh.length;
+      $("#play-new").onclick = () => playQueue(fresh, 0);
+    } catch (e) {
+      $("#new").replaceChildren(empty(friendlyError(e)));
+    }
+  }
+
+  // ---------- playlists ----------
+  async function loadPlaylists() {
+    try {
+      const lists = await listMyPlaylists();
+      $("#playlists").replaceChildren(...(lists.length
+        ? lists.map((p) => el("a", { className: "playlist-card", href: playlistUrl(p.id) },
+            el("span", { className: "art", textContent: "♫" }),
+            el("strong", { textContent: p.name }),
+            el("span", { className: "muted", textContent: p.is_public ? "Public" : "Private" })))
+        : [el("p", { className: "muted", style: "margin:0", textContent: "No playlists yet. Create one above, then add songs from any song page." })]));
+    } catch (e) { $("#playlists").replaceChildren(el("p", { className: "muted", textContent: friendlyError(e) })); }
+  }
+
+  $("#new-playlist").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = e.target.elements.name.value.trim();
+    if (!name) return e.target.elements.name.focus();
+    const btn = e.target.querySelector("button");
+    btn.disabled = true;
+    try {
+      const p = await createPlaylist({ name });
+      location.href = playlistUrl(p.id);
+    } catch (err) { alert(friendlyError(err)); btn.disabled = false; }
+  });
+
+  // ---------- following ----------
+  async function loadFollowing() {
+    try {
+      const artists = await listFollowing();
+      $("#following").replaceChildren(...(artists.length ? artists.map(chip)
+        : [el("p", { className: "muted", style: "margin:0", textContent: "You're not following anyone yet. Open an artist and hit Follow." })]));
+    } catch (e) { $("#following").replaceChildren(el("p", { className: "muted", textContent: friendlyError(e) })); }
+  }
+
+  // ---------- search ----------
+  let timer, seq = 0;
+  $("#search").addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = $("#search").value.trim();
+    if (!q) { $("#search-panel").hidden = true; return; }
+    const mine = ++seq;
+    timer = setTimeout(async () => {
+      try {
+        const { songs, artists } = await search(q);
+        if (mine !== seq) return;
+        $("#search-artists").replaceChildren(...artists.map(chip));
+        $("#search-artists").hidden = !artists.length;
+        $("#search-songs").replaceChildren(...(songs.length ? songList(songs) : (artists.length ? [] : [empty(`Nothing found for "${q}".`)])));
+        $("#search-panel").hidden = false;
+      } catch (e) {
+        $("#search-songs").replaceChildren(empty(friendlyError(e)));
+        $("#search-panel").hidden = false;
+      }
+    }, 300);
+  });
+
+  loadSongs();
+  loadPlaylists();
+  loadFollowing();
 </script>
 </body>
 </html>
