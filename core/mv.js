@@ -350,12 +350,14 @@ export const ROLES = {
 
 // credits: [{ artistId?, name, roles: [...], canEdit?, canDelete? }]. The uploader is always
 // the main artist; pass their own credit first (or it's added for you).
-export async function createSong({ title, audioMediaId, coverMediaId = null, credits = [] }) {
+export async function createSong({ title, audioMediaId, coverMediaId = null, credits = [], lyrics = "" }) {
   const user = await currentUser();
   const me = await getArtist(user.id);
   if (!me) throw Object.assign(new Error("Create your artist profile first."), { code: "no-artist" });
   const id = crypto.randomUUID();
-  must(await supabase.from("songs").insert({ id, artist_id: me.id, title: title.trim(), audio_media_id: audioMediaId, cover_media_id: coverMediaId }));
+  const row = { id, artist_id: me.id, title: title.trim(), audio_media_id: audioMediaId, cover_media_id: coverMediaId };
+  if (lyrics.trim()) row.lyrics = cleanLyrics(lyrics);
+  must(await supabase.from("songs").insert(row));
   let list = credits.filter((c) => c.name?.trim() && c.roles?.length);
   if (!list.some((c) => c.artistId === me.id)) list = [{ artistId: me.id, name: me.name, roles: ["main"] }, ...list];
   const seen = new Set();
@@ -438,6 +440,23 @@ export async function getArtists(ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return [];
   return must(await supabase.from("artists").select("*").in("id", unique));
+}
+
+// ---------- lyrics ----------
+// lyrics: text, one line per line. lyrics_sync: null, or one start time (seconds) per
+// line of the text (null for blank lines).
+export const cleanLyrics = (text) => text.replace(/\r\n?/g, "\n").split("\n").map((l) => l.trimEnd()).join("\n").trim();
+export const lyricLines = (text) => (text ? text.split("\n") : []);
+export function isSynced(song) {
+  const lines = lyricLines(song?.lyrics);
+  return Array.isArray(song?.lyrics_sync) && song.lyrics_sync.length === lines.length
+    && lines.every((l, i) => !l.trim() || typeof song.lyrics_sync[i] === "number");
+}
+
+// Owner, or a collaborator with "can edit".
+export async function saveLyrics(songId, { lyrics, sync = null }) {
+  const text = lyrics.trim() ? cleanLyrics(lyrics) : null;
+  return must(await supabase.from("songs").update({ lyrics: text, lyrics_sync: text ? sync : null }).eq("id", songId).select().single());
 }
 
 // songs -> same songs with .artist (main artist row) attached

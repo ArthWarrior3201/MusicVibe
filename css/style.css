@@ -250,13 +250,10 @@ body.has-player-space { padding-bottom: 96px; }
 .vp-seek::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 4px #0008; }
 .vp-seek::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 0; }
 .vp-seek::-moz-range-track { background: transparent; }
-.vp-vol { flex: 0 0 80px; min-width: 0; }
-.vp-icon { background: none; border: 0; cursor: pointer; font-size: 16px; padding: 4px; color: var(--text); }
 .vp-status { flex-basis: 100%; font-size: 12px; color: var(--muted); min-height: 0; }
 .vp-status:empty { display: none; }
 .vp-status.bad { color: var(--bad); }
 .song-player { margin-top: 18px; }
-@media (max-width: 640px) { .vp-vol, .vp-icon { display: none; } }
 
 /* ---------- share popup ---------- */
 .share-backdrop { position: fixed; inset: 0; z-index: 50; background: #0008; display: grid; place-items: center; padding: 16px; }
@@ -270,3 +267,16 @@ body.has-player-space { padding-bottom: 96px; }
 .share-copy { flex: none; padding: 10px 16px; border-radius: 10px; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: #fff;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); transition: background .2s, color .2s; }
 .share-copy.done { background: #bbf7d0; color: #14532d; }
+
+/* ---------- lyrics ---------- */
+.lyrics-panel h2 { margin-bottom: 10px; }
+.lyrics { max-height: 460px; overflow-y: auto; scroll-behavior: smooth; padding: 6px 4px 140px 0; position: relative; }
+.lyrics.unsynced { padding-bottom: 6px; max-height: none; }
+.lyrics-note { margin: 0 0 14px; padding: 8px 12px; border-radius: 10px; background: var(--bg-2); color: var(--muted); font-size: 13px; display: inline-block; }
+.lyric-line { display: block; width: 100%; text-align: left; margin: 0; padding: 4px 0; background: none; border: 0; font: inherit;
+  font-size: clamp(20px, 3.4vw, 28px); font-weight: 800; line-height: 1.35; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.lyrics.unsynced .lyric-line { color: #fff; }                       /* not synced: white, always */
+.lyrics.synced .lyric-line { color: #ffffff47; cursor: pointer; transition: color .35s ease, transform .35s ease; }
+.lyrics.synced .lyric-line:hover { color: #ffffff99; }
+.lyrics.synced .lyric-line.active { color: #fff; text-shadow: 0 0 24px #ffffff40; }
+.lyric-gap { height: 18px; }

@@ -39,6 +39,10 @@
     </div>
   </section>
 
+  <section class="panel lyrics-panel" id="lyrics-panel" hidden>
+    <h2>Lyrics</h2>
+  </section>
+
   <div class="two-col">
     <section id="about"></section>
     <section class="panel">
@@ -54,7 +58,7 @@
 
 <script type="module">
   import { requireUser, getSong, mediaUrl, listMyPlaylists, createPlaylist, addToPlaylist, friendlyError } from "./core/mv.js";
-  import { artistTile, creditsList, artistLine, el, playlistUrl, shareButton, createPlayer } from "./core/ui.js";
+  import { artistTile, creditsList, artistLine, el, playlistUrl, shareButton, createPlayer, lyricsView } from "./core/ui.js";
 
   const { user } = await requireUser();
   const $ = (s) => document.querySelector(s);
@@ -74,6 +78,10 @@
     const player = createPlayer({ audioId: "player" });
     $("#player-box").append(player.root);
     player.load(song); // starts downloading now; press play any time
+    if (song.lyrics?.trim()) {
+      $("#lyrics-panel").append(lyricsView(song, player.audio));
+      $("#lyrics-panel").hidden = false;
+    }
     // The main artist (who uploaded it on ProArtists) gets the big tile.
     if (artist) $("#about").append(artistTile(artist, { showFollow: artist.id !== user.id }));
     $("#add-pl").append(shareButton({ title: song.title, text: `${song.title} by ${artist?.name || "an artist"} on MusicVibe` }));

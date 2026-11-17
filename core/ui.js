@@ -1,5 +1,5 @@
 // Shared UI pieces for MusicVibe + ProArtists (no framework, builds DOM safely).
-import { SITES, mediaUrl, ROLES, isFollowing, follow, unfollow, friendlyError, songSource } from "./mv.js";
+import { SITES, mediaUrl, ROLES, isFollowing, follow, unfollow, friendlyError, songSource, lyricLines, isSynced } from "./mv.js";
 
 export function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -165,7 +165,7 @@ const fmt = (t) => {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 };
-const VOL_KEY = "mv-volume";
+const PLAY_VOLUME = 0.8;
 
 export function createPlayer({ audioId } = {}) {
   const audio = el("audio", { preload: "auto", crossOrigin: "anonymous" });
@@ -175,19 +175,11 @@ export function createPlayer({ audioId } = {}) {
   const seek = el("input", { className: "vp-seek", type: "range", min: 0, max: 0, step: 0.1, value: 0, disabled: true });
   seek.setAttribute("aria-label", "Seek");
   const dur = el("span", { className: "vp-time", textContent: "0:00" });
-  const mute = el("button", { className: "vp-icon", type: "button", title: "Mute", textContent: "🔊" });
-  const vol = el("input", { className: "vp-seek vp-vol", type: "range", min: 0, max: 1, step: 0.01 });
-  vol.setAttribute("aria-label", "Volume");
   const status = el("span", { className: "vp-status" });
-  const root = el("div", { className: "vplayer" }, audio, play, cur, seek, dur, mute, vol, status);
-
-  let saved = 1;
-  try { saved = Math.min(1, Math.max(0, Number(localStorage.getItem(VOL_KEY) ?? 1))); } catch {}
-  audio.volume = saved; vol.value = saved;
-  const paintVol = () => { vol.style.setProperty("--p", `${(audio.muted ? 0 : audio.volume) * 100}%`); mute.textContent = audio.muted || audio.volume === 0 ? "🔇" : "🔊"; };
-  paintVol();
-  vol.oninput = () => { audio.volume = Number(vol.value); audio.muted = false; paintVol(); try { localStorage.setItem(VOL_KEY, vol.value); } catch {} };
-  mute.onclick = () => { audio.muted = !audio.muted; paintVol(); };
+  const root = el("div", { className: "vplayer" }, audio, play, cur, seek, dur, status);
+  // No volume bar: a fixed, comfortable level with some headroom (use your device's volume).
+  audio.volume = PLAY_VOLUME;
+  try { localStorage.removeItem("mv-volume"); } catch {}
 
   let dragging = false;
   const paint = () => {
@@ -238,6 +230,52 @@ export function createPlayer({ audioId } = {}) {
   };
   play.onclick = () => (audio.paused ? api.play() : api.pause());
   return api;
+}
+
+// ---------- lyrics (Spotify-style) ----------
+// Not synced: every line stays bright white, with a note on top.
+// Synced: the line being sung lights up and the rest fade back, following `audio`;
+// click a line to jump there. The box scrolls to keep the current line in view
+// (unless you're scrolling it yourself).
+export function lyricsView(song, audio) {
+  const lines = lyricLines(song.lyrics);
+  const synced = isSynced(song);
+  const times = synced ? song.lyrics_sync : [];
+  const box = el("div", { className: "lyrics" + (synced ? " synced" : " unsynced") });
+  if (!synced) box.append(el("p", { className: "lyrics-note", textContent: "These lyrics haven't been time-synced yet." }));
+  const nodes = lines.map((line, i) => {
+    if (!line.trim()) return box.appendChild(el("div", { className: "lyric-gap" }));
+    const n = el(synced ? "button" : "p", { className: "lyric-line", textContent: line });
+    if (synced) {
+      n.type = "button";
+      n.onclick = () => { audio.currentTime = times[i] + 0.01; audio.play?.().catch(() => {}); };
+    }
+    return box.appendChild(n);
+  });
+  if (!synced || !audio) return box;
+
+  let active = -1, userScrollUntil = 0;
+  box.addEventListener("wheel", () => { userScrollUntil = Date.now() + 3000; }, { passive: true });
+  box.addEventListener("touchmove", () => { userScrollUntil = Date.now() + 3000; }, { passive: true });
+  const update = () => {
+    const t = audio.currentTime;
+    let idx = -1;
+    for (let i = 0; i < lines.length; i++) if (typeof times[i] === "number" && times[i] <= t + 0.05) idx = i;
+    if (idx === active) return;
+    nodes[active]?.classList.remove("active");
+    active = idx;
+    const n = nodes[active];
+    if (!n) return;
+    n.classList.add("active");
+    if (Date.now() > userScrollUntil) box.scrollTo({ top: n.offsetTop - box.clientHeight / 2 + n.offsetHeight / 2, behavior: "smooth" });
+  };
+  let raf = 0;
+  const loop = () => { update(); raf = audio.paused ? 0 : requestAnimationFrame(loop); };
+  audio.addEventListener("play", () => { if (!raf) raf = requestAnimationFrame(loop); });
+  audio.addEventListener("seeked", update);
+  audio.addEventListener("timeupdate", update);
+  update();
+  return box;
 }
 
 // ---------- mini player (bottom bar, plays a queue) ----------
