@@ -244,6 +244,66 @@ async function uploadFileInner(file, { onProgress = () => {} } = {}) {
 }
 
 export const uploadAudio = uploadFile;
+
+// ---------- uninterrupted playback ----------
+// Songs are downloaded completely (in the API's 4 MB pieces, each retried if the
+// network hiccups) and played from memory, so playback can't stall mid-song and
+// seeking is instant. Huge files (> STREAM_OVER bytes) are streamed instead.
+const STREAM_OVER = 80 * 1024 * 1024;
+const songCache = new Map(); // mediaId -> Promise<{ url, size, streamed }>
+
+async function fetchRange(url, start) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { Range: `bytes=${start}-` }, mode: "cors" });
+      if (res.status === 200 || res.status === 206) return res;
+      if (res.status < 500 && res.status !== 429) throw Object.assign(new Error(`Song not available (${res.status})`), { status: res.status });
+      throw new Error(`Server error (${res.status})`);
+    } catch (e) {
+      if (attempt >= 4 || (e.status && e.status < 500)) throw e;
+      await new Promise((r) => setTimeout(r, 700 * attempt));
+    }
+  }
+}
+
+async function downloadSong(mediaId, onProgress) {
+  const url = mediaUrl(mediaId);
+  const chunks = [];
+  let pos = 0, total = null, type = "audio/mpeg";
+  while (total === null || pos < total) {
+    const res = await fetchRange(url, pos);
+    type = res.headers.get("content-type") || type;
+    const range = /bytes (\d+)-(\d+)\/(\d+)/.exec(res.headers.get("content-range") || "");
+    if (res.status === 200 || !range) { // whole file in one go
+      chunks.push(await res.arrayBuffer());
+      total = pos = chunks[0].byteLength;
+      break;
+    }
+    total = Number(range[3]);
+    if (pos === 0 && total > STREAM_OVER) { res.body?.cancel(); return { url, size: total, streamed: true }; }
+    chunks.push(await res.arrayBuffer());
+    pos = Number(range[2]) + 1;
+    onProgress?.(pos / total);
+  }
+  onProgress?.(1);
+  return { url: URL.createObjectURL(new Blob(chunks, { type })), size: total, streamed: false };
+}
+
+// Returns (and caches) a playable source for a song's audio. Keeps the last few in memory.
+export function songSource(mediaId, onProgress) {
+  if (!songCache.has(mediaId)) {
+    const job = downloadSong(mediaId, onProgress).catch((e) => { songCache.delete(mediaId); throw e; });
+    songCache.set(mediaId, job);
+    while (songCache.size > 6) { // forget the oldest (not the one just requested)
+      const [oldId, oldJob] = songCache.entries().next().value;
+      songCache.delete(oldId);
+      oldJob.then((s) => { if (!s.streamed) setTimeout(() => URL.revokeObjectURL(s.url), 60_000); }).catch(() => {});
+    }
+  } else if (onProgress) {
+    songCache.get(mediaId).then(() => onProgress(1)).catch(() => {});
+  }
+  return songCache.get(mediaId);
+}
 export const mediaUrl = (id) => (id ? `${API_BASE}/api/media/${id}` : null);
 
 export function deleteMedia(id) {

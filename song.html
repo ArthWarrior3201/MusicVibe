@@ -31,8 +31,7 @@
         <div id="artists"></div>
       </div>
     </div>
-    <audio class="player" id="player" controls preload="metadata" crossorigin="anonymous"></audio>
-    <p class="hint bad" id="player-msg" hidden></p>
+    <div class="song-player" id="player-box"></div>
     <div class="add-to-playlist" id="add-pl">
       <select id="pl-select" aria-label="Playlist"></select>
       <button class="btn ghost small" id="pl-add" type="button">Add to playlist</button>
@@ -55,7 +54,7 @@
 
 <script type="module">
   import { requireUser, getSong, mediaUrl, listMyPlaylists, createPlaylist, addToPlaylist, friendlyError } from "./core/mv.js";
-  import { artistTile, creditsList, artistLine, el, playlistUrl, shareButton } from "./core/ui.js";
+  import { artistTile, creditsList, artistLine, el, playlistUrl, shareButton, createPlayer } from "./core/ui.js";
 
   const { user } = await requireUser();
   const $ = (s) => document.querySelector(s);
@@ -71,12 +70,10 @@
     $("#artists").append(artistLine(credits, artists, song.artist_id));
     const cover = mediaUrl(song.cover_media_id) || mediaUrl(artist?.avatar_media_id);
     $("#cover").append(cover ? el("img", { src: cover, alt: "" }) : el("img", { src: "img/logo-512.png", alt: "" }));
-    $("#player").src = mediaUrl(song.audio_media_id);
-    $("#player").addEventListener("error", () => {
-      $("#player-msg").textContent = "This song couldn't be loaded. Check your connection and try again in a moment.";
-      $("#player-msg").hidden = false;
-    });
-    $("#player").addEventListener("playing", () => { $("#player-msg").hidden = true; });
+    // Our player: downloads the whole song first (no interruptions), no grey buffer bar.
+    const player = createPlayer({ audioId: "player" });
+    $("#player-box").append(player.root);
+    player.load(song); // starts downloading now; press play any time
     // The main artist (who uploaded it on ProArtists) gets the big tile.
     if (artist) $("#about").append(artistTile(artist, { showFollow: artist.id !== user.id }));
     $("#add-pl").append(shareButton({ title: song.title, text: `${song.title} by ${artist?.name || "an artist"} on MusicVibe` }));
