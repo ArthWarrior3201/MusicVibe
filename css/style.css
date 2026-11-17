@@ -250,6 +250,9 @@ body.has-player-space { padding-bottom: 96px; }
 .vp-seek::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 4px #0008; }
 .vp-seek::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 0; }
 .vp-seek::-moz-range-track { background: transparent; }
+.vp-vol { flex: 0 0 90px; min-width: 0; }
+.vp-icon { background: none; border: 0; cursor: pointer; font-size: 16px; padding: 4px; color: var(--text); line-height: 1; }
+@media (max-width: 640px) { .vp-vol { flex-basis: 70px; } }
 .vp-status { flex-basis: 100%; font-size: 12px; color: var(--muted); min-height: 0; }
 .vp-status:empty { display: none; }
 .vp-status.bad { color: var(--bad); }

@@ -165,7 +165,8 @@ const fmt = (t) => {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 };
-const PLAY_VOLUME = 0.8;
+const DEFAULT_VOLUME = 0.7;
+const VOL_KEY = "mv-volume2"; // new key: everyone starts at the new default
 
 export function createPlayer({ audioId } = {}) {
   const audio = el("audio", { preload: "auto", crossOrigin: "anonymous" });
@@ -175,11 +176,26 @@ export function createPlayer({ audioId } = {}) {
   const seek = el("input", { className: "vp-seek", type: "range", min: 0, max: 0, step: 0.1, value: 0, disabled: true });
   seek.setAttribute("aria-label", "Seek");
   const dur = el("span", { className: "vp-time", textContent: "0:00" });
+  const mute = el("button", { className: "vp-icon", type: "button", title: "Mute" });
+  const vol = el("input", { className: "vp-seek vp-vol", type: "range", min: 0, max: 1, step: 0.01 });
+  vol.setAttribute("aria-label", "Volume");
   const status = el("span", { className: "vp-status" });
-  const root = el("div", { className: "vplayer" }, audio, play, cur, seek, dur, status);
-  // No volume bar: a fixed, comfortable level with some headroom (use your device's volume).
-  audio.volume = PLAY_VOLUME;
-  try { localStorage.removeItem("mv-volume"); } catch {}
+  const root = el("div", { className: "vplayer" }, audio, play, cur, seek, dur, mute, vol, status);
+
+  // Volume: starts at a comfortable middle level (songs are loudness-matched on upload),
+  // and remembers what you pick.
+  let level = DEFAULT_VOLUME;
+  try { const v = parseFloat(localStorage.getItem(VOL_KEY)); if (v >= 0 && v <= 1) level = v; } catch {}
+  audio.volume = level; vol.value = level;
+  const paintVol = () => {
+    const off = audio.muted || audio.volume === 0;
+    vol.style.setProperty("--p", `${(off ? 0 : audio.volume) * 100}%`);
+    mute.textContent = off ? "🔇" : audio.volume < 0.5 ? "🔉" : "🔊";
+    mute.title = off ? "Unmute" : "Mute";
+  };
+  paintVol();
+  vol.oninput = () => { audio.volume = Number(vol.value); audio.muted = false; paintVol(); try { localStorage.setItem(VOL_KEY, vol.value); } catch {} };
+  mute.onclick = () => { audio.muted = !audio.muted; if (!audio.muted && audio.volume === 0) { audio.volume = DEFAULT_VOLUME; vol.value = DEFAULT_VOLUME; } paintVol(); };
 
   let dragging = false;
   const paint = () => {

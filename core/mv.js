@@ -306,6 +306,19 @@ export function songSource(mediaId, onProgress) {
 }
 export const mediaUrl = (id) => (id ? `${API_BASE}/api/media/${id}` : null);
 
+// Loudness fix for a song uploaded before fixes existed (owner only; takes a few seconds).
+export function normalizeMedia(id) {
+  return api(`/api/normalize?id=${id}`, { method: "POST" });
+}
+
+// Which of these media files still need the loudness fix? (only your own are visible)
+export async function mediaNeedingFix(ids) {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from("media_files").select("id, mime, normalized").in("id", ids);
+  if (error) return []; // e.g. database migration not run yet
+  return data.filter((m) => m.mime.startsWith("audio/") && m.normalized === false).map((m) => m.id);
+}
+
 export function deleteMedia(id) {
   return api(`/api/media/${id}`, { method: "DELETE" });
 }
